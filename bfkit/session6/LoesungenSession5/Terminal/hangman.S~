@@ -1,0 +1,181 @@
+/**************************************************************************
+hangman.S: 'Hangman' example in assembler code.
+
+Compilation: bfin-elf-gcc -c -I ../inc hangman.S
+
+(C) 2008, ISI/ETH Zurich, bolliger@isi.ee.ethz.ch
+**************************************************************************/
+
+#include    <defBF532.h>             // includes also "def_LPBlackfin.h"
+
+.data
+
+sol:	    .string "solution";
+guess:    .space 32
+
+notvalid: .string "Not valid character, use a-z.";
+won:			.string "Congratulations, you won!";
+lost:     .string "Sorry, you lost. To try again, press 'y'.";
+left:     .string "Tries left: ";
+
+tries:    .int 0;
+right:    .int 0;
+
+.text
+
+init:       
+			[--SP] = RETS;           // push RETS to allow nested calls
+      JUMP delay;               // jump to main program
+
+//
+//		WORKAROUND TO CLEAR SERIAL INPUT BUFFER
+//		DO NOT EDIT THIS PART: START
+// 
+delay:       
+			CALL initx;
+
+	    R0.H = 0x16E3; 	     		// delay of 1s     
+	    R0.L = 0x6000;
+	    LC0 = R0;
+	    LOOP delay1 LC0;        
+	    LOOP_BEGIN delay1;
+	    NOP;                  
+	    LOOP_END delay1;
+
+clearbuf:   
+			CALL rxchr;		     			// second part of the workaround
+	    IF CC JUMP clearbuf;  
+//
+//		DO NOT EDIT THIS PART: END
+//
+
+reset:
+			P0.L = sol;							// solution pointer
+			P0.H = sol;
+			P1.L = guess;						// guess pointer
+			P1.H = guess;
+			P2.L = tries;						// tries left, initial value = 10
+			P2.H = tries;
+			R0 = 10;
+			[P2] = R0;
+			P2.L = right;						// number of right guesses, initial value = 0
+			P2.H = right;
+			R0 = 0;
+			[P2] = R0;
+			R1 = 0;									// R1, character count
+
+// guess space is filled with '_' characters and the count of characters in "sol" is stored in R1
+start:			
+			R0 = B[P0++];
+			CC = R0 == 0;
+			IF CC JUMP newline
+			R1 += 1;
+			R0 = '_';
+			B[P1++] = R0;
+			CALL txchr;
+			R0 = ' ';
+			CALL txchr;	 
+			JUMP start;
+newline:
+			CALL txbr;
+// receive character and store in R0
+mloop:			
+			CALL rxchr;
+	    IF !CC JUMP mloop;
+
+// check if received character is a-z
+	    R2 = 96;
+	    CC = R2 < R0;
+	    IF !CC JUMP nvalid;
+	    R2 = 123;
+	    CC = R0 < R2;
+	    IF !CC JUMP nvalid;
+
+// reloading of pointers and the count of right guesses (R4)
+			P0.L = sol;
+			P0.H = sol;
+			P1.L = guess;
+			P1.H = guess;
+			P2.L = right;
+			P2.H = right;
+			R4 = [P2];          // R4 -> right guesses
+
+			R3 = R0;            // copy/move received character to R3
+			LC0 = R1;
+			LOOP loop1 LC0;        
+			LOOP_BEGIN loop1;
+
+			R2 = B[P0++];
+			CC = R2 == R3;			// check if received character is in "sol"
+			IF !CC JUMP ignore;
+			R0 = B[P1];					// if character was found in "sol", check
+			CC = R0 == R3;			// if it's already guessed
+			IF CC JUMP ignore;
+			B[P1] = R3;					// write new guessed character to "guess"
+			R4 += 1;						// and increase number of right guesses
+ignore:
+			R0 = B[P1++];
+			CALL txchr;
+			R0 = ' ';
+			CALL txchr;
+			LOOP_END loop1;
+			CALL txbr;
+
+			CC = R1 == R4;			// if the number of right guesses is equal to
+			IF CC JUMP win;			// the number of characters, you win.
+
+			R0 = [P2];					// load previous count of right guesses
+
+			CC = R0 == R4;			// if the count of right guesses has changed,
+			IF CC JUMP failed;  // you have guessed at least one character right in this round.
+
+			[P2] = R4;					// store new count of right guesses.
+			JUMP mloop;
+
+// reduces the amount of tries, because somebody failed
+failed:
+			P2.L = tries;
+			P2.H = tries;
+			R0 = [P2];
+			CC = R0 == 1;       // last try?
+			IF CC JUMP lose;		// if true, you lose.
+			R0 += -1;
+			[P2] = R0;
+			P0.H = left;
+      P0.L = left;
+	    CALL txstr;
+			CALL txdec;
+			JUMP newline;
+
+lose:
+			P0.H = lost;
+      P0.L = lost;
+	    CALL txstr;
+			CALL txbr;
+waity:
+			CALL rxchr;
+	    IF !CC JUMP waity;
+			R2 = 'y';
+			CC = R0 == R2;
+			IF !CC JUMP gameover;
+			JUMP reset;
+
+win:	
+			P0.H = won;
+      P0.L = won;
+	    CALL txstr;
+			CALL txbr;
+			JUMP gameover;
+
+nvalid:	    
+			P0.H = notvalid;
+      P0.L = notvalid;
+	    CALL txstr;
+	    JUMP newline;
+
+gameover:   
+			R0 = 27(Z);
+      CALL txchr;
+      RETS = [SP++];
+      RTS;
+

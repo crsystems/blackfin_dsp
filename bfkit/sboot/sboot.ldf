@@ -1,0 +1,11 @@
+/*
+sboot.ldf: linker script for serial boot loader sboot.S 
+*/
+
+OUTPUT_FORMAT(elf32-bfin)
+OUTPUT_ARCH(bfin)
+
+MEMORY
+{
+  l1code(x)   : ORIGIN = 0xFFA13C00, LENGTH = 0x00000400
+}

@@ -1,0 +1,201 @@
+/**************************************************************************
+coretimer.S: Use the coretimer to toggle leds
+
+This assembler source needs a C preprocessor to remove C-style comments
+and to handle include files and substitutions of makros and constants.
+
+gcc option -xassembler-with-cpp is not needed for file extension .S:
+bfin-elf-gcc -c -I ../inc debounce.S
+
+The bfkit boot loader will take care of stack and clock initialisation:
+stack 4kB scratchpad ram, core clock 384.000MHz, system clock 96.000MHz
+
+(C) 2007, ISI/ETH Zurich, strebel@isi.ee.ethz.ch
+**************************************************************************/
+
+#include <defBF532.h>           // includes also "def_LPBlackfin.h"
+
+#define  KEYHIT   50000         // depends on mloop time
+#define  KEYMAX   2000000
+#define  KEYRPT   500000
+
+.data
+.section    .rodata
+titl:       .string "\r\nHello World!\r\n";
+term:       .string "\r\nbyebye ...\r\n";
+
+
+dkeya:  .int 0           // .byte=8bit .short=16bit .int=32bit
+
+.text
+
+init:       [--SP] = RETS;           // push RETS to allow nested calls
+    
+            // write hello message
+            CALL initx;
+            P0.L = titl;
+            P0.H = titl;
+            CALL txstr;
+
+            /* core timer inerrupt configuration */
+
+            // unmask interrupt for core timer
+            P0.H = HI(IMASK);
+            P0.L = LO(IMASK);
+            R0 = [P0];
+            BITSET(R0, 6);
+            [P0] = R0;
+
+            // write intTmr to Event Vector Table
+            P0.H = HI(EVT6);
+            P0.L = LO(EVT6);
+            P1.H = intTmr;
+            P1.L = intTmr;
+            [P0] = P1;
+
+            /* Core timer configuration */
+            
+            // set scale paramter to 1
+            P0.H = HI(TSCALE);
+            P0.L = LO(TSCALE);
+            R0 = 0 (Z);
+            [P0] = R0;
+
+            // set period to 1s
+            P0.H = HI(TPERIOD);
+            P0.L = LO(TPERIOD);
+            R0.H = 0x16E3; 
+            R0.L = 0x6000;
+            [P0] = R0;
+
+            // start core timer
+            P0.H = HI(TCNTL);
+            P0.L = LO(TCNTL);
+            R0 = [P0];
+            BITSET(R0, 0);          // Activate Timer
+            BITSET(R0, 2);          // Timer will not restart when finished
+            [P0] = R0;
+
+		//Setting direction on button A to input
+		P0.H = HI(FIO_DIR);
+		P0.L = LO(FIO_DIR);
+		R0 = [P0];
+		BITCLR(R0, 7);
+		[P0] = R0;
+
+		//Setting PF7 to EDGE
+		P0.H = HI(FIO_EDGE);
+		P0.L = LO(FIO_EDGE);
+		R0 = [P0];
+		BITSET(R0, 7);
+		[P0] = R0;
+
+
+		//Setting FIO_POLAR to active low
+		P0.H = HI(FIO_POLAR);
+		P0.L = LO(FIO_POLAR);
+		R0 = [P0];
+		BITSET(R0, 7);
+		[P0] = R0;
+
+
+		//Setting interrupt to masked on PF7
+		P0.H = HI(FIO_MASKA_D);
+		P0.L = LO(FIO_MASKA_D);
+		R0 = [P0];
+		BITSET(R0, 7);
+		[P0] = R0;
+
+		//Setting interrupt for button A to be masked in SIC_IMASK
+		P0.H = HI(SIC_IMASK);
+		P0.L = LO(SIC_IMASK);
+		R0 = [P0];
+		BITSET(R0, 19);
+		[P0] = R0;
+
+		//Unmasking interrupt for button A in IMASK
+		P0.H = HI(IMASK);
+		P0.L = LO(IMASK);
+		R0 = [P0];
+		BITSET(R0, 7);
+		[P0] = R0;
+
+		//Writing interrupt handler to event table 12
+		P0.H = HI(EVT7);
+		P0.L = LO(EVT7);
+		P1.L = btn_int;
+		P1.H = btn_int;
+		[P0] = P1;
+
+
+// main loop
+mloop:      
+            CALL rxchr;
+            IF !CC JUMP continue;
+            R1 = 'q'(Z);                // 'q' --> quit
+            CC = R0 == R1;
+	    RAISE 7;
+            IF CC JUMP mexit;
+
+continue:   JUMP mloop;
+
+btn_int:
+		[--SP] = ASTAT;
+		[--SP] = RETS;
+		[--SP] = (R7:7, P5:5);
+
+		//set led's to high
+		P5.H = HI(FIO_FLAG_D);
+		P5.L = LO(FIO_FLAG_D);
+		R7 = [P5];
+		BITCLR(R7, 7);
+		BITCLR(R7, 4);
+		BITCLR(R7, 5);
+		[P5] = R7;
+
+		//set period to 1s
+		//P5.H = HI(TPERIOD);
+		//P5.L = LO(TPERIOD);
+		//R7 = [P5];
+		//R7.H = 0x16E3;
+		//R7.L = 0x6000;
+		//[P5] = R7;		
+
+		//activate and start timer
+	        //P5.H = HI(TCNTL);
+                //P5.L = LO(TCNTL);
+                //R7 = [P5];
+		//BITSET(R7, 0);
+                //BITSET(R7, 1);        
+                //[P5] = R7;
+
+		(R7:7, P5:5) = [SP++];
+		RETS = [SP++];
+		ASTAT = [SP++];
+		RTI;
+
+
+intTmr:     [--SP] = ASTAT;
+            [--SP] = RETS;
+            [--SP] = (R7:7, P5:5);
+            
+            // clear PF6
+            P5.L = LO(FIO_FLAG_T);
+            P5.H = HI(FIO_FLAG_T);
+            R7 = W[P5];
+            BITSET(R7, 4);
+            BITSET(R7, 5);
+            W[P5] = R7;
+
+            (R7:7, P5:5) = [SP++];
+            RETS = [SP++];
+            ASTAT = [SP++];
+            RTI;
+
+mexit:      P0.h = term;
+            P0.l = term;
+            CALL txstr;
+            R0 = 27(z);
+            CALL txchr;
+            RETS = [SP++];
+            RTS;

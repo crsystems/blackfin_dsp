@@ -1,0 +1,62 @@
+
+debounce.hex:     file format ihex
+
+Disassembly of section .sec1:
+
+ff804000 <.sec1>:
+ff804000:	00 00       	NOP;
+	...
+Disassembly of section .sec2:
+
+ffa08000 <.sec2>:
+ffa08000:	67 01       	[--SP] = RETS;
+ffa08002:	48 e1 c0 ff 	P0.H = 0xffc0;		/* (-64)	P0=0xffc00000(-4194304) */
+ffa08006:	08 e1 04 07 	P0.L = 0x704;		/* (1796)	P0=0xffc00704(-4192508) */
+ffa0800a:	00 e1 10 00 	R0.L = 0x10;		/* ( 16)	R0=0x10( 16) */
+ffa0800e:	00 97       	W[P0] = R0;
+ffa08010:	24 00       	SSYNC;
+ffa08012:	00 e3 0a 00 	CALL 0x0xffa08026;
+ffa08016:	03 10       	IF !CC JUMP 0x0xffa0801c;
+ffa08018:	00 e3 2b 00 	CALL 0x0xffa0806e;
+ffa0801c:	00 e3 20 00 	CALL 0x0xffa0805c;
+ffa08020:	f9 13       	IF !CC JUMP 0x0xffa08012;
+ffa08022:	27 01       	RETS = [SP++];
+ffa08024:	10 00       	RTS;
+ffa08026:	ec 05       	[--SP] = (R7:5, P5:4);
+ffa08028:	46 e1 00 00 	R6.H = 0x0;		/* (  0)	R6=0x0(  0) */
+ffa0802c:	06 e1 50 c3 	R6.L = 0xc350;		/* (-15536)	R6=0xc350(50000) */
+ffa08030:	4d e1 80 ff 	P5.H = 0xff80;		/* (-128)	P5=0xff800000 */
+ffa08034:	0d e1 00 40 	P5.L = 0x4000;		/* (16384)	P5=0xff804000 */
+ffa08038:	4c e1 c0 ff 	P4.H = 0xffc0;		/* (-64)	P4=0xffc00000(-4194304) */
+ffa0803c:	0c e1 00 07 	P4.L = 0x700;		/* (1792)	P4=0xffc00700(-4192512) */
+ffa08040:	25 95       	R5 = W[P4] (Z);
+ffa08042:	3d 48       	CC = !BITTST (R5, 0x7);		/* bit  7 */
+ffa08044:	04 18       	IF CC JUMP 0x0xffa0804c;
+ffa08046:	87 e1 00 00 	R7 = 0x0 (Z);		/*		R7=0x0(  0) */
+ffa0804a:	05 20       	JUMP.S 0x0xffa08054;
+ffa0804c:	2f 91       	R7 = [P5];
+ffa0804e:	37 09       	CC = R7 <= R6;
+ffa08050:	02 10       	IF !CC JUMP 0x0xffa08054;
+ffa08052:	0f 64       	R7 += 0x1;		/* (  1) */
+ffa08054:	2f 93       	[P5] = R7;
+ffa08056:	3e 08       	CC = R6 == R7;
+ffa08058:	ac 05       	(R7:5, P5:4) = [SP++];
+ffa0805a:	10 00       	RTS;
+ffa0805c:	fd 05       	[--SP] = (R7:7, P5:5);
+ffa0805e:	4d e1 c0 ff 	P5.H = 0xffc0;		/* (-64)	P5=0xffc04000(-4177920) */
+ffa08062:	0d e1 00 07 	P5.L = 0x700;		/* (1792)	P5=0xffc00700(-4192512) */
+ffa08066:	2f 95       	R7 = W[P5] (Z);
+ffa08068:	37 48       	CC = !BITTST (R7, 0x6);		/* bit  6 */
+ffa0806a:	bd 05       	(R7:7, P5:5) = [SP++];
+ffa0806c:	10 00       	RTS;
+ffa0806e:	fd 05       	[--SP] = (R7:7, P5:5);
+ffa08070:	4d e1 c0 ff 	P5.H = 0xffc0;		/* (-64)	P5=0xffc00700(-4192512) */
+ffa08074:	0d e1 00 07 	P5.L = 0x700;		/* (1792)	P5=0xffc00700(-4192512) */
+ffa08078:	2f 95       	R7 = W[P5] (Z);
+ffa0807a:	27 4b       	BITTGL (R7, 0x4);		/* bit  4 */
+ffa0807c:	27 49       	CC = BITTST (R7, 0x4);		/* bit  4 */
+ffa0807e:	02 10       	IF !CC JUMP 0x0xffa08082;
+ffa08080:	2f 4b       	BITTGL (R7, 0x5);		/* bit  5 */
+ffa08082:	2f 97       	W[P5] = R7;
+ffa08084:	bd 05       	(R7:7, P5:5) = [SP++];
+ffa08086:	10 00       	RTS;
