@@ -8,13 +8,26 @@ Linking:     bfin-elf-ld -T ../include/bfkit.ldf -o pass.x pass.o codec.o
 **************************************************************************/
 
 #include    <defBF532.h>             // includes also "def_LPBlackfin.h"
-#define	DBUFLEN  24000
+#define	DBUFLEN  12
 
 .data
+
+firparam:	.short 0x0000;
+		.short 0x026c;
+		.short 0x08cf;
+		.short 0x10bf;
+		.short 0x1731;
+		.short 0x19a9;
+		.short 0x1731;
+		.short 0x10bf;
+		.short 0x08cf;
+		.short 0x026c;
+		.short 0x0000;	
+
+
 .section extram
 .align 4;
 dbuf:	.space DBUFLEN*4;
-
 
 .text
 
@@ -31,37 +44,59 @@ main:       R0 = 1 (Z);              // initialize codec using mic in
 		L0.H = HI(DBUFLEN);
 		L0.L = LO(DBUFLEN);
 
-
-		R7.L = 0x4000;		//1/4 as a factor		
-
 mloop:      CALL rxsport;            // receive right channel
+		R0<<=16;
 		R1 = R0;
-		R1<<=16;
-
             CALL rxsport;            // receive left channel
-
-		R2 = [I0];	     // restore u[k-K] to R3 and R4
-		R3 = R2.L (Z);	     //left channel
-		R4 = R2;
-		R4>>=16;	     //right channel
+		R1 = R1 | R0;
+		[I0++] = R1;
 	
-		R6 = R0;
-		R6<<=16;
-		A0 = R6;		// left channel
-		A1 = R1;		// right channel
-		
-		R6 = 0x0(Z);
-	
-		R5.L = ( A0 += R7.L * R3.L );
-		R6.H = ( A1 += R7.L * R4.L );
-		R6>>=16;
-
-		R1 = R1|R0;		//save left and right channel combined to
-		[I0++] = R1;		//circular buffer
-		
-
-		R0 = R6;
+		CALL filter;
+		R0 = R1;
             CALL txsport;            // transmit right channel
-		R0 = R5;
+		R0 = R1;
+		R0>>=16;
             CALL txsport;            // transmit left channel
             JUMP mloop;              // loop forever
+
+
+
+filter:
+		[--SP] = RETS;
+		P0.L = firparam;
+		P0.H = firparam;
+		
+		A0 = 0;
+		A1 = 0;
+		
+		R0 = 0;
+
+floop:		R1 = [I0];
+		R2 = [I0++];
+
+		R1<<=16;	//shift left channel up
+		R1>>=16;	//and down
+		R2>>=16;	//shift right channel down
+
+		R3 = [P0++];
+		R0 += 1;
+
+		A0 += R3.L * R1.L;
+		A1 += R3.L * R2.L;
+
+
+		R5 = 11;
+		CC = R0 < R5;
+		IF CC JUMP floop;
+
+		R4 = 0;
+
+		R1.L = (A0 += R4.L * R4.L);
+		R1.H = (A1 += R4.L * R4.L);
+
+		RETS = [SP++];
+		RTS;
+		
+
+		
+
