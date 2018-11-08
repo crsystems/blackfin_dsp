@@ -1,6 +1,6 @@
 # Makefile for bfkit codec example
 
-NAME = fir
+NAME = iir
 TOOLPATH = ~/bfin-elf/bin
 CC = $(TOOLPATH)/bfin-elf-gcc
 LD = $(TOOLPATH)/bfin-elf-ld
