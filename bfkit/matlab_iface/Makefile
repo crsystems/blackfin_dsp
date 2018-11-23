@@ -1,6 +1,6 @@
 # Makefile for bfkit example
 
-NAME = communication_test
+NAME = filter
 TOOLPATH = ~/bfin-elf/bin
 CC = $(TOOLPATH)/bfin-elf-gcc
 LD = $(TOOLPATH)/bfin-elf-ld

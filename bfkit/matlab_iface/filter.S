@@ -9,19 +9,49 @@ Use bflod without the terminal (without the -t option).
 
 .data
 
-fir_coeff:	.short	0x0000
+fir_coeff:	.short	0x0000		// space for the FIR coefficients
+		.short	0x0000		// initially not filtering at all
 		.short	0x0000
 		.short	0x0000
 		.short	0x0000
 		.short	0x0000
 		.short	0x0000
+		.short	0x0000
+		.short	0x0000
+		.short	0x0000
+		.short	0x0000
+		.short	0x0000
+		.short	0x0000
+		.short	0x0000
+		.short	0x0000
+		.short	0x0000
+		.short	0x0000
+		.short	0x0000
+		.short	0x0000
+		.short	0x0001
+
+iir_coeff:	.short  0x0000		// space for the IIR coefficients
+		.short  0x0000		// initially not filtering at all
+		.short  0x0000
+		.short  0x0000
+		.short  0x0000
+
+last_filter:	.byte	0x00		// to remember which filter was previously selected before a measurement or a coefficient
+					// update
+
+.align 4
+fir_buffer:	.space 80;		// input buffer for the FIR filter (4 bytes a sample times 20 samples = 80 bytes)
+
+iir_buffer:	.space 20;		// input buffer for the IIR filter (4 bytes a sample times 5 samples = 20 bytes)
+
+
 
 .text
 
 init:       [--SP] = RETS;           // push RETS to allow nested calls
 
 	    //UART BAUD 9600 INIT
-            //enable mapping to UART_DLL & UART_DLH
+            //enable mapping to UART_DLL  UART_DLH
             P0.H = HI(UART_LCR);
             P0.L = LO(UART_LCR);
             R0 = [P0];
@@ -62,23 +92,28 @@ main_loop:
 
 		R1 = 'm';
 		CC = R0 == R1;
-		IF CC JUMP measure;
+		IF !CC JUMP fir;
+		CALL measure_function;
 
-		R1 = 'f';
+fir:		R1 = 'f';
 		CC = R0 == R1;
-		IF CC JUMP fir;
+		IF !CC JUMP iir;
+		CALL fir_function;
 
-		R1 = 'i';
+iir:		R1 = 'i';
 		CC = R0 == R1;
-		IF CC JUMP iir;
+		IF !CC JUMP update_fir;
+		CALL iir_function;
 
-		R1 = 'F';
+update_fir:	R1 = 'F';
 		CC = R0 == R1;
-		IF CC JUMP update_fir;
+		IF !CC JUMP update_iir;
+		CALL update_fir_function;
 
-		R1 = 'I';
+update_iir:	R1 = 'I';
 		CC = R0 == R1;
-		IF CC JUMP update_iir;
+		IF !CC JUMP main_loop;
+		CALL update_iir_function;
 
 		JUMP main_loop;
 
@@ -86,29 +121,7 @@ main_loop:
 
 
 
-measure:
-	CALL measure_function;
-	JUMP main_loop;
-fir:
-	CALL fir_function;
-iir:
-	CALL iir_function;
-update_fir:
-	CALL update_fir_function;
-	JUMP main_loop;
-update_iir: 
-	CALL update_iir_function;
-	JUMP main_loop;
-
-
-
-
 measure_function:
-	R0 = 'x';
-	CALL txchr;
-	R0 = '\n';
-	CALL txchr;
-	RTS;
 
 fir_function:
 
