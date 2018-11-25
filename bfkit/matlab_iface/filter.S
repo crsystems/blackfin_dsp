@@ -6,13 +6,14 @@ Use bflod without the terminal (without the -t option).
 (C) 2014, ISI/ETH Zurich, cschuerc@isi.ee.ethz.ch
 **************************************************************************/
 #include    <defBF532.h>
-
+#define		FIR_ORDER	20
+#define		IIR_ORDER	6	
 .data
 
 fir_coeff:	.short	0x0000		// space for the FIR coefficients
 		.short	0x0000		// initially not filtering at all
-		.short	0x0000
-		.short	0x0000
+		.short	0x0000		// fortunately, the coefficients are symmetrical
+		.short	0x0000		// which means, that we can use them in reverse without special care
 		.short	0x0000
 		.short	0x0000
 		.short	0x0000
@@ -32,17 +33,19 @@ fir_coeff:	.short	0x0000		// space for the FIR coefficients
 
 iir_coeff:	.short  0x0000		// space for the IIR coefficients
 		.short  0x0000		// initially not filtering at all
+		.short  0x0000		//TODO	document in which order the coefficients have to be supplied
 		.short  0x0000
 		.short  0x0000
-		.short  0x0000
+		.short	0x0000
 
 last_filter:	.byte	0x00		// to remember which filter was previously selected before a measurement or a coefficient
 					// update
+					// 0 => FIR, 1 => IIR
 
 .align 4
-fir_buffer:	.space 80;		// input buffer for the FIR filter (4 bytes a sample times 20 samples = 80 bytes)
+fir_buffer:	.space 4*FIR_ORDER;	// input buffer for the FIR filter (4 bytes a sample times 20 samples = 80 bytes)
 
-iir_buffer:	.space 20;		// input buffer for the IIR filter (4 bytes a sample times 5 samples = 20 bytes)
+iir_buffer:	.space 4*IIR_ORDER;	// input buffer for the IIR filter (4 bytes a sample times 5 samples = 20 bytes)
 
 
 
@@ -67,7 +70,7 @@ init:       [--SP] = RETS;           // push RETS to allow nested calls
             P0.H = HI(UART_DLH);
             P0.L = LO(UART_DLH);
             R0 = 0x02;
-            [P0] = R0;
+           [P0] = R0;
 
             //restore normal mapping to UART_THR
             P0.H = HI(UART_LCR);
@@ -86,6 +89,7 @@ init:       [--SP] = RETS;           // push RETS to allow nested calls
 Exchange the code below by your own code. Note that you can not send data
 to matlab at a too high speed.
 **************************************************************************/
+
 main_loop:
 		CALL rxchr;
 		IF !CC JUMP main_loop;
@@ -118,15 +122,142 @@ update_iir:	R1 = 'I';
 		JUMP main_loop;
 
 
+/*
+
+Clearing the memory for the circular buffers of the FIR and IIR filters*/
+
+
+init_buffers:
+		[--SP] = (R7:0, P5:0);
+		[--SP] = RETS;
+
+		I0.H = firbuffer;		// Circular buffer 0 => FIR filter
+		I0.L = firbuffer;
+		B0 = I0;
+		L0.H = HI(4*FIR_ORDER);
+		L0.L = LO(4*IIR_ORDER);
+		
+		P5 = FIR_ORDER;
+		R7 = 0;
+
+		LOOP clearfirbuf LC0 = P5;	// Clearing circular buffer for FIR
+		LOOP_BEGIN clearfirbuf;
+		[I0++] = R7;
+		nop;
+		LOOP_END clearfirbuf;
+
+
+		I1.H = iirbuffer;		// Circular buffer 1 => IIR buffer
+		I1.L = iirbuffer;
+		B1 = I1;
+		L1.H = HI(4*iir_order);
+		L1.L = LO(4*iir_order);
+
+		P5 = IIR_ORDER;		
+		LOOP cleariirbuf LC0 = P5;	// Clearing circular buffer for IIR
+		LOOP_BEGIN cleariirbuf;
+		[I1++] = R7;
+		nop;
+		LOOP_END cleariirbuf;
+
+		RETS = [SP++];
+		(R7:0, P5:0) = [SP++];
+		RTS;
 
 
 
-measure_function:
+
+measure_function:	//TODO
 
 fir_function:
+		[--SP] = (R7:6, P5:4);
+		[--SP] = R0;	
+		[--SP] = RETS;
 
-iir_function:
+		CALL init_buffers;	// initialize the circular buffers
 
-update_fir_function:
+		P5 = last_filter;
+		B[P5] = 0;		// writing last_filter variable for measure function
+fir_loop:		
+		CALL rxsport;	// recieve left channel
+		R7 = R0;
+		CALL rxsport;	// recieve right channel
+		R0 <<= 16;
+		R7 = R7 | R0;	// right channel = R7.H, left channel = R7.L
 
-update_iir_function:
+		[I0++] = R7;	// store combined values in circular buffer
+
+		P5.H = HI(fir_coeff);
+		P5.L = LO(fir_coeff);
+
+		P4 = FIR_ORDER;
+
+		A0 = A1 = 0;	// clearing accumulator registers
+	
+		LOOP fir_calc_loop LC0 = P4;
+		LOOP_BEGIN fir_calc_loop;
+			R6 = W[P5++] (X) || R7 = [I0++];	// R6 = (order-i)'th filter parameter, R7 = (order-i)'th sample
+			A0 += R7.L * R6.L, A1 += R7.H * R6.L;	// A0 is responsible for the left channel, A1 for the right
+		LOOP_END fir_calc_loop;
+
+		R0.L = A0 (S2RND), R0.H = A1 (S2RND);		// Saving A0 and A1 to R0 and multiplying by 2
+
+		R7 = R0;
+		R7 >>= 16;	// R7.L = right channel, R7.H = 0
+		R0 <<= 16;
+		R0 >>= 16;	// R0.L = left channel, R0.H = 0
+
+				
+		CALL txsport;	// sending filtered sample
+				//|
+		R0 = R7;	//|
+				//|
+		CALL txsport;	//v
+
+
+		CALL rxchr;		// data received via UART?
+		IF !CC JUMP fir_loop;
+
+		R1 = 'm';		// measure function desired
+		CC = R0 == R1;
+		IF !CC JUMP fir_fir;
+		CALL measure_function;	// after measure returns, the normal FIR filter operation continues
+		JUMP fir_loop;
+
+fir_fir:	R1 = 'f';		// FIR filter operation desired
+		CC = R0 == R1;
+		IF !CC JUMP fir_iir;
+		JUMP fir_loop;		// just jump to the loop start, as we are supplying the desired function already
+
+fir_iir:	R1 = 'i';		// IIR filter operation desired
+		CC = R0 == R1;
+		IF !CC JUMP fir_update_fir;
+		
+		RETS = [SP++];		// restore return address and registers from stack
+		R0 = [SP++];		
+		(R7:6, P5:4) = [SP++];
+		JUMP iir_function;	// and branch to the fir function
+					// that way it seems to the fir functio, as it were called from the main loop
+					// and we do not waste stack space with nesting unnecessary function calls
+
+fir_update_fir:	R1 = 'F';		// FIR parameter update desired
+		CC = R0 == R1;
+		IF !CC JUMP fir_update_iir;
+		CALL update_fir_function;
+		JUMP fir_loop;
+
+fir_update_iir:	R1 = 'I';		// IIR parameter update desired
+		CC = R0 == R1;
+		IF !CC JUMP fir_loop;
+		CALL update_iir_function;
+
+		JUMP fir_loop;
+
+
+
+
+iir_function:	//TODO
+
+update_fir_function:	//TODO
+
+update_iir_function:	//TODO
