@@ -45,7 +45,7 @@ last_filter:	.byte	0x00		// to remember which filter was previously selected bef
 .align 4
 fir_buffer:	.space 4*FIR_ORDER;	// input buffer for the FIR filter (4 bytes a sample times 20 samples = 80 bytes)
 
-iir_buffer:	.space 4*IIR_ORDER;	// input buffer for the IIR filter (4 bytes a sample times 5 samples = 20 bytes)
+iir_buffer:	.space 4*IIR_ORDER;	// input buffer for the IIR filter (4 bytes a sample times 6 samples = 24 bytes)
 
 
 
@@ -124,7 +124,9 @@ update_iir:	R1 = 'I';
 
 /*
 
-Clearing the memory for the circular buffers of the FIR and IIR filters*/
+Clearing the memory for the circular buffers of the FIR and IIR filters
+
+*/
 
 
 init_buffers:
@@ -258,6 +260,92 @@ fir_update_iir:	R1 = 'I';		// IIR parameter update desired
 
 iir_function:	//TODO
 
-update_fir_function:	//TODO
+update_fir_function:
+		[SP--] = RETS;
+		[SP--] = (R7:5, P5:4);
+		[SP--] = R0;
 
-update_iir_function:	//TODO
+		R7 = 0;
+
+		P5.H = HI(FIR_ORDER);
+		P5.L = LO(FIR_ORDER);
+
+		R6.L = W[P5];
+
+		P4.H = HI(fir_coeff);
+		P4.L = LO(fir_coeff);
+
+		
+update_fir_loop:
+		CC = R7 < R6;
+		IF !CC JUMP update_fir_exit;
+
+		CALL rxchr;
+		IF !CC JUMP update_fir_loop;		
+
+		R0 <<= 8;
+		R5.L = R0.L			//TODO find out endianness of matlab word transfer
+		
+update_fir_wait_second_byte:
+		
+		CALL rxchr;
+		IF !CC JUMP update_fir_wait_second_byte;
+
+		R5 = R5 | R0;			// currently using big endian
+
+		W[P4++] = R5.L;
+		
+		R7 += 1;
+
+		JUMP update_fir_loop;
+
+update_fir_exit:
+		R0 = [++SP];
+		(R7:5, P5:4) = [++SP];
+		RETS = [++SP];	
+
+
+
+update_iir_function:	
+		[SP--] = RETS;
+		[SP--] = (R7:5, P5:4);
+		[SP--] = R0;
+
+		R7 = 0;
+
+		P5.H = HI(IIR_ORDER);
+		P5.L = LO(IIR_ORDER);
+
+		R6.L = W[P5];
+
+		P4.H = HI(iir_coeff);
+		P4.L = LO(iir_coeff);
+
+		
+update_iir_loop:
+		CC = R7 < R6;
+		IF !CC JUMP update_iir_exit;
+
+		CALL rxchr;
+		IF !CC JUMP update_iir_loop;		
+
+		R0 <<= 8;
+		R5.L = R0.L			//TODO find out endianness of matlab word transfer
+		
+update_iir_wait_second_byte:
+		
+		CALL rxchr;
+		IF !CC JUMP update_iir_wait_second_byte;
+
+		R5 = R5 | R0;			// currently using big endian
+
+		W[P4++] = R5.L;
+		
+		R7 += 1;
+
+		JUMP update_iir_loop;
+
+update_iir_exit:
+		R0 = [++SP];
+		(R7:5, P5:4) = [++SP];
+		RETS = [++SP];
