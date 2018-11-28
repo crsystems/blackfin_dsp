@@ -1,7 +1,11 @@
 %dsp_dir = '/dev/USBtty0';
 %fir_coeff_dec = 0;
-
+format long;
 main();
+
+
+
+
 
 function main()
    %dsp_desc = fopen(dsp_dir);
@@ -28,44 +32,78 @@ function main()
 end
 
 function measure_filter()
-    input_samples = [];
-    output_samples = [];
-    bode_plot = [];
-    freq = 1;
-    bound = 20000;
-    resolution = 120;
-    sample_time = 1/48000;
-    while(freq <= bound)
+    freq = 1;                                   % start frequency
+    bound = 20000;                              % end frequency
+    resolution = 120;                           % # of samples per frequency
+    sample_time = 1/48000;                      % period length of one samle
+    input_samples = [];                         % array of samples of sweep
+    bode_plot = zeros(1,bound);                 % initializing bode_plot array with zeros
+    while(freq <= bound)                        % for every frequency
         i = 1;
-        while(i <= resolution)
-            input_samples((freq-1)*resolution+i)=sin(2*pi*freq*i*sample_time);
+        while(i <= resolution)                  % for resolution times
+            input_samples((freq-1)*resolution+i)=cos(2*pi*freq*i*sample_time);  % find value of sine with desired frequency at time i*sample_time
             i = i+1;
         end
         freq = freq + 1;
     end
-    %plot(input_samples);
+    
+    
+    input_samples_fixed = fi(input_samples, true, 16, 15);  % converting long double to fixed length fix point fraction
     
     %communicate with dsp...
     
-    output_samples = input_samples;
+    load('matlab.mat');
+    coeffs_fir = Num;
+    
+    
+    output_samples = apply_fir(input_samples, coeffs_fir);
+    
+    
+    %g = 1;
+    %while(g <= length(output_samples))
+    %    if(input_samples_fixed(g) == 0)
+    %       gain(g) = 1;
+    %    else
+    %        gain(g) = output_samples(g)/input_samples(g);
+    %    end
+    %end
     
     gain = output_samples./input_samples;
-    
+   
     j = 1;
-    while(j <= bound)
+    while(j <= bound)                                           % for every frequency
         l=1;
         tmp = 0;
-        while(l <= resolution)
-            tmp = tmp + gain((j-1)*resolution + l);
+        while(l <= resolution)                                  % for every sample in that frequency
+            tmp = tmp + gain((j-1)*resolution + l);             % add all the obtained gains
             l = l + 1;
         end
-        bode_plot(j) = 20*log(tmp/resolution);
+        bode_plot(j) = 20*log(abs(tmp/resolution));             % divide by the number of samples and convert it to the dB scale
         j = j + 1;
     end
     plot(bode_plot);
     
-    
 end
+
+function out = apply_fir(input, coeffs)
+    offset = zeros(1,19);
+    input_double = cast(input, 'double');
+    final_input_signal = cat(2, offset, input_double);
+    
+    i = 20;
+    while(i <= length(final_input_signal))
+        k = 0;
+        tmp = 0;
+        while(k < 20)
+            tmp = tmp + final_input_signal(i-k)*coeffs(k+1);
+            k = k+1;
+        end
+        out(i-19) = tmp;
+        i = i + 1;
+    end
+end
+        
+        
 
 
 function update_fir()
