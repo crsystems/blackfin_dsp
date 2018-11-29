@@ -1,6 +1,4 @@
-dsp_dev = '/dev/USBtty0';
-baudrate = 9600;
-blackfin = serial(dsp_dev, 'BaudRate', baudrate);
+
 %fir_coeff_dec = 0;
 format long;
 main();
@@ -11,9 +9,9 @@ main();
 
 function main()
    
-   prompt = "Choose one action:\nExecute FIR filter: 1\nExecute IIR filter: 2\nUpdate FIR coefficients: 3\nUpdate IIR coefficients: 4\nMeasure filter: 5\nExit: 6\n";
+   prompt = 'Choose one action:\nExecute FIR filter: 1\nExecute IIR filter: 2\nUpdate FIR coefficients: 3\nUpdate IIR coefficients: 4\nMeasure filter: 5\nFind endianness of UART transfer: 6\nExit: 7\n';
    r = input(prompt);
-   while(r ~= 6)
+   while(r ~= 7)
        switch r
            case 1
                exec_fir()
@@ -25,6 +23,8 @@ function main()
                update_iir()
            case 5
                measure_filter()
+           case 6
+               find_endianness()
        end
        r = input(prompt);
    end
@@ -106,20 +106,27 @@ function out = apply_fir(input, coeffs)
 end
         
 
-function exec_fir()
-    d = fopen(blackfin);
-    fprintf(d, "%s", "m\n");
+function find_endianness()
+
+    dsp_dev = '/dev/ttyUSB0';
+    baudrate = 9600;
+    blackfin = serial(dsp_dev, 'BaudRate', baudrate);
+
+    fopen(blackfin);
+    fprintf(blackfin, "%s", "m\n");
     
-    test = 16;
-    fwrite(d, test);
+    fwrite(blackfin, 256);
     
-    fprintf(d, "%s", "\n");
-    v = fscanf(d, "%d");
-    disp(v);
-    s = fscanf(d, "%s");
-    disp(s);
+    fprintf(blackfin, "%s", "\n");
+    s = fscanf(blackfin, "%s");
     
-    fclose(d);
+    if(s == 'l')
+        disp("Endianness is little endian");
+    else
+        disp("Endianness is big endian");
+    end
+    
+    fclose(blackfin);
 end
         
 

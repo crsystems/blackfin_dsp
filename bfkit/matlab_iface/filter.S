@@ -133,8 +133,8 @@ init_buffers:
 		[--SP] = (R7:0, P5:0);
 		[--SP] = RETS;
 
-		I0.H = firbuffer;		// Circular buffer 0 => FIR filter
-		I0.L = firbuffer;
+		I0.H = fir_buffer;		// Circular buffer 0 => FIR filter
+		I0.L = fir_buffer;
 		B0 = I0;
 		L0.H = HI(4*FIR_ORDER);
 		L0.L = LO(4*IIR_ORDER);
@@ -149,11 +149,11 @@ init_buffers:
 		LOOP_END clearfirbuf;
 
 
-		I1.H = iirbuffer;		// Circular buffer 1 => IIR buffer
-		I1.L = iirbuffer;
+		I1.H = iir_buffer;		// Circular buffer 1 => IIR buffer
+		I1.L = iir_buffer;
 		B1 = I1;
-		L1.H = HI(4*iir_order);
-		L1.L = LO(4*iir_order);
+		L1.H = HI(4*IIR_ORDER);
+		L1.L = LO(4*IIR_ORDER);
 
 		P5 = IIR_ORDER;		
 		LOOP cleariirbuf LC0 = P5;	// Clearing circular buffer for IIR
@@ -169,53 +169,54 @@ init_buffers:
 
 
 
-measure_function:	
+endianness_function:	
 		[--SP] = (R7:0, P5:0);
 		[--SP] = RETS;
+		R7 = 0(Z);
+		R6 = 0(Z);
 
-test_loop1:	CALL rxchr;
-		IF !CC JUMP test_loop1;
+endian_loop1:	CALL rxchr;
+		IF !CC JUMP endian_loop1;
 		R7 = R0;
-test_loop2:	CALL rxchr;
-		IF !CC JUMP test_loop2;
+endian_loop2:	CALL rxchr;
+		IF !CC JUMP endian_loop2;
 		R6 = R0;
 
-		R7 <<= 8;
-		R7 = R7 | R6;
+		R6 <<= 8;
+		R5 = R7 | R6;
 
-		R0 = R7;
+
+		R5 += 1;
+
+		CC = BITTST(R5, 0);
+		IF CC JUMP little_endian;
+		
+big_endian:	R0 = 'b';
+		//R0 = R7;
 		CALL txchr;
 
 		R0 = '\n';
-
 		CALL txchr;
 
-		R7 >>= 4;
-		R6 = 1;
-		CC = R7 == R6;
-		IF CC JUMP big_endian;
-		
+		JUMP endian_exit;
+
+little_endian:	
+		CC = BITTST(R5, 8);
+		IF !CC JUMP big_endian;
+
 		R0 = 'l';
 		CALL txchr;
 
 		R0 = '\n';
 		CALL txchr;
 
-		JUMP measure_exit;
-
-big_endian:	R0 = 'b';
-		CALL txchr;
-
-		R0 = '\n';
-		CALL txchr;
-
-measure_exit:
-		RETS = [++SP];
-		(R7:0, P5:0) = [++SP];
+endian_exit:
+		RETS = [SP++];
+		(R7:0, P5:0) = [SP++];
 		RTS;
 
 
-
+measure_function:
 
 	
 
@@ -226,8 +227,10 @@ fir_function:
 
 		CALL init_buffers;	// initialize the circular buffers
 
-		P5 = last_filter;
-		B[P5] = 0;		// writing last_filter variable for measure function
+		P5.H = last_filter;
+		P5.L = last_filter;
+		R7 = 0;
+		B[P5] = R7;		// writing last_filter variable for measure function
 fir_loop:		
 		CALL rxsport;	// recieve left channel
 		R7 = R0;
@@ -237,8 +240,8 @@ fir_loop:
 
 		[I0++] = R7;	// store combined values in circular buffer
 
-		P5.H = HI(fir_coeff);
-		P5.L = LO(fir_coeff);
+		P5.H = fir_coeff;
+		P5.L = fir_coeff;
 
 		P4 = FIR_ORDER;
 
@@ -250,7 +253,8 @@ fir_loop:
 			A0 += R7.L * R6.L, A1 += R7.H * R6.L;	// A0 is responsible for the left channel, A1 for the right
 		LOOP_END fir_calc_loop;
 
-		R0.L = A0 (S2RND), R0.H = A1 (S2RND);		// Saving A0 and A1 to R0 and multiplying by 2
+		R0.L = A0 (S2RND);
+		R0.H = A1 (S2RND);		// Saving A0 and A1 to R0 and multiplying by 2
 
 		R7 = R0;
 		R7 >>= 16;	// R7.L = right channel, R7.H = 0
@@ -309,9 +313,9 @@ fir_update_iir:	R1 = 'I';		// IIR parameter update desired
 iir_function:	//TODO
 
 update_fir_function:
-		[SP--] = RETS;
-		[SP--] = (R7:5, P5:4);
-		[SP--] = R0;
+		[--SP] = RETS;
+		[--SP] = (R7:5, P5:4);
+		[--SP] = R0;
 
 		R7 = 0;
 
@@ -320,8 +324,8 @@ update_fir_function:
 
 		R6.L = W[P5];
 
-		P4.H = HI(fir_coeff);
-		P4.L = LO(fir_coeff);
+		P4.H = fir_coeff;
+		P4.L = fir_coeff;
 
 		
 update_fir_loop:
@@ -332,7 +336,7 @@ update_fir_loop:
 		IF !CC JUMP update_fir_loop;		
 
 		R0 <<= 8;
-		R5.L = R0.L			//TODO find out endianness of matlab word transfer
+		R5 = R0			//TODO find out endianness of matlab word transfer
 		
 update_fir_wait_second_byte:
 		
@@ -341,23 +345,23 @@ update_fir_wait_second_byte:
 
 		R5 = R5 | R0;			// currently using big endian
 
-		W[P4++] = R5.L;
+		W[P4++] = R5;
 		
 		R7 += 1;
 
 		JUMP update_fir_loop;
 
 update_fir_exit:
-		R0 = [++SP];
-		(R7:5, P5:4) = [++SP];
-		RETS = [++SP];	
+		R0 = [SP++];
+		(R7:5, P5:4) = [SP++];
+		RETS = [SP++];	
 
 
 
 update_iir_function:	
-		[SP--] = RETS;
-		[SP--] = (R7:5, P5:4);
-		[SP--] = R0;
+		[--SP] = RETS;
+		[--SP] = (R7:5, P5:4);
+		[--SP] = R0;
 
 		R7 = 0;
 
@@ -366,8 +370,8 @@ update_iir_function:
 
 		R6.L = W[P5];
 
-		P4.H = HI(iir_coeff);
-		P4.L = LO(iir_coeff);
+		P4.H = iir_coeff;
+		P4.L = iir_coeff;
 
 		
 update_iir_loop:
@@ -378,7 +382,7 @@ update_iir_loop:
 		IF !CC JUMP update_iir_loop;		
 
 		R0 <<= 8;
-		R5.L = R0.L			//TODO find out endianness of matlab word transfer
+		R5 = R0			//TODO find out endianness of matlab word transfer
 		
 update_iir_wait_second_byte:
 		
@@ -387,13 +391,13 @@ update_iir_wait_second_byte:
 
 		R5 = R5 | R0;			// currently using big endian
 
-		W[P4++] = R5.L;
+		W[P4++] = R5;
 		
 		R7 += 1;
 
 		JUMP update_iir_loop;
 
 update_iir_exit:
-		R0 = [++SP];
-		(R7:5, P5:4) = [++SP];
-		RETS = [++SP];
+		R0 = [SP++];
+		(R7:5, P5:4) = [SP++];
+		RETS = [SP++];
