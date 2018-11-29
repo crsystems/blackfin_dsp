@@ -169,7 +169,55 @@ init_buffers:
 
 
 
-measure_function:	//TODO
+measure_function:	
+		[--SP] = (R7:0, P5:0);
+		[--SP] = RETS;
+
+test_loop1:	CALL rxchr;
+		IF !CC JUMP test_loop1;
+		R7 = R0;
+test_loop2:	CALL rxchr;
+		IF !CC JUMP test_loop2;
+		R6 = R0;
+
+		R7 <<= 8;
+		R7 = R7 | R6;
+
+		R0 = R7;
+		CALL txchr;
+
+		R0 = '\n';
+
+		CALL txchr;
+
+		R7 >>= 4;
+		R6 = 1;
+		CC = R7 == R6;
+		IF CC JUMP big_endian;
+		
+		R0 = 'l';
+		CALL txchr;
+
+		R0 = '\n';
+		CALL txchr;
+
+		JUMP measure_exit;
+
+big_endian:	R0 = 'b';
+		CALL txchr;
+
+		R0 = '\n';
+		CALL txchr;
+
+measure_exit:
+		RETS = [++SP];
+		(R7:0, P5:0) = [++SP];
+		RTS;
+
+
+
+
+	
 
 fir_function:
 		[--SP] = (R7:6, P5:4);

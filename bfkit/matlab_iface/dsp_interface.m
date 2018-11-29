@@ -1,4 +1,6 @@
-%dsp_dir = '/dev/USBtty0';
+dsp_dev = '/dev/USBtty0';
+baudrate = 9600;
+blackfin = serial(dsp_dev, 'BaudRate', baudrate);
 %fir_coeff_dec = 0;
 format long;
 main();
@@ -8,7 +10,6 @@ main();
 
 
 function main()
-   %dsp_desc = fopen(dsp_dir);
    
    prompt = "Choose one action:\nExecute FIR filter: 1\nExecute IIR filter: 2\nUpdate FIR coefficients: 3\nUpdate IIR coefficients: 4\nMeasure filter: 5\nExit: 6\n";
    r = input(prompt);
@@ -36,7 +37,8 @@ function measure_filter()
     bound = 20000;                              % end frequency
     resolution = 120;                           % # of samples per frequency
     sample_time = 1/48000;                      % period length of one samle
-    input_samples = [];                         % array of samples of sweep
+    input_samples = zeros(1,resolution*bound);  % array of samples of sweep
+    output_samples = zeros(1, resolution*bound);
     bode_plot = zeros(1,bound);                 % initializing bode_plot array with zeros
     while(freq <= bound)                        % for every frequency
         i = 1;
@@ -103,6 +105,22 @@ function out = apply_fir(input, coeffs)
     end
 end
         
+
+function exec_fir()
+    d = fopen(blackfin);
+    fprintf(d, "%s", "m\n");
+    
+    test = 16;
+    fwrite(d, test);
+    
+    fprintf(d, "%s", "\n");
+    v = fscanf(d, "%d");
+    disp(v);
+    s = fscanf(d, "%s");
+    disp(s);
+    
+    fclose(d);
+end
         
 
 
