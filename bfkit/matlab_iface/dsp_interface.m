@@ -1,14 +1,16 @@
 
-%fir_coeff_dec = 0;
 format long;
+
+global blackfin;
+
+dsp_dev = '/dev/ttyUSB0';
+baudrate = 9600;
+blackfin = serial(dsp_dev, 'BaudRate', baudrate);
+
+
 main();
 
-
-
-
-
 function main()
-   
    prompt = 'Choose one action:\nExecute FIR filter: 1\nExecute IIR filter: 2\nUpdate FIR coefficients: 3\nUpdate IIR coefficients: 4\nMeasure filter: 5\nFind endianness of UART transfer: 6\nExit: 7\n';
    r = input(prompt);
    while(r ~= 7)
@@ -34,7 +36,7 @@ end
 
 function measure_filter()
     freq = 1;                                   % start frequency
-    bound = 20000;                              % end frequency
+    bound = 1000;                              % end frequency
     resolution = 120;                           % # of samples per frequency
     sample_time = 1/48000;                      % period length of one samle
     input_samples = zeros(1,resolution*bound);  % array of samples of sweep
@@ -52,25 +54,39 @@ function measure_filter()
     
     input_samples_fixed = fi(input_samples, true, 16, 15);  % converting long double to fixed length fix point fraction
     
+    
+    
     %communicate with dsp...
     
     load('matlab.mat');
     coeffs_fir = Num;
     
-    
     output_samples = apply_fir(input_samples, coeffs_fir);
     
-    
-    %g = 1;
-    %while(g <= length(output_samples))
-    %    if(input_samples_fixed(g) == 0)
-    %       gain(g) = 1;
-    %    else
-    %        gain(g) = output_samples(g)/input_samples(g);
-    %    end
-    %end
-    
-    gain = output_samples./input_samples;
+    gain = zeros(1, bound*resolution);
+    g = 1;
+    while(g <= length(output_samples))
+        if(input_samples_fixed(g) == 0)
+            if(fi(output_samples(g), true, 16, 15) ~= 0)
+                %gain(g) = output_samples(g);
+            else
+                gain(g) = 1;
+            end
+        else
+            gain(g) = output_samples(g)/input_samples(g);
+        end
+        
+        if(g == 0.25*(bound*resolution))
+            disp("25% finished");
+        elseif(g == 0.5*(bound*resolution))
+            disp("50% finished");
+        elseif(g == 0.75*(bound*resolution))
+            disp("75% finished");
+        elseif(g == bound*resolution)
+            disp("Done.");
+        end
+        g = g + 1;
+    end
    
     j = 1;
     while(j <= bound)                                           % for every frequency
@@ -108,9 +124,7 @@ end
 
 function find_endianness()
 
-    dsp_dev = '/dev/ttyUSB0';
-    baudrate = 9600;
-    blackfin = serial(dsp_dev, 'BaudRate', baudrate);
+    global blackfin;
 
     fopen(blackfin);
     fprintf(blackfin, "%s", "m\n");

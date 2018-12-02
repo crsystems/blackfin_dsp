@@ -116,8 +116,13 @@ update_fir:	R1 = 'F';
 
 update_iir:	R1 = 'I';
 		CC = R0 == R1;
-		IF !CC JUMP main_loop;
+		IF !CC JUMP endian;
 		CALL update_iir_function;
+
+endian:		R1 = 'e';
+		CC = R0 == R1;
+		IF !CC JUMP main_loop;
+		CALL endianness_function;
 
 		JUMP main_loop;
 
@@ -169,51 +174,6 @@ init_buffers:
 
 
 
-endianness_function:	
-		[--SP] = (R7:0, P5:0);
-		[--SP] = RETS;
-		R7 = 0(Z);
-		R6 = 0(Z);
-
-endian_loop1:	CALL rxchr;
-		IF !CC JUMP endian_loop1;
-		R7 = R0;
-endian_loop2:	CALL rxchr;
-		IF !CC JUMP endian_loop2;
-		R6 = R0;
-
-		R6 <<= 8;
-		R5 = R7 | R6;
-
-
-		R5 += 1;
-
-		CC = BITTST(R5, 0);
-		IF CC JUMP little_endian;
-		
-big_endian:	R0 = 'b';
-		//R0 = R7;
-		CALL txchr;
-
-		R0 = '\n';
-		CALL txchr;
-
-		JUMP endian_exit;
-
-little_endian:	
-		CC = BITTST(R5, 8);
-		IF !CC JUMP big_endian;
-
-		R0 = 'l';
-		CALL txchr;
-
-		R0 = '\n';
-		CALL txchr;
-
-endian_exit:
-		RETS = [SP++];
-		(R7:0, P5:0) = [SP++];
-		RTS;
 
 
 measure_function:
@@ -401,3 +361,52 @@ update_iir_exit:
 		R0 = [SP++];
 		(R7:5, P5:4) = [SP++];
 		RETS = [SP++];
+
+
+
+endianness_function:	
+		[--SP] = (R7:0, P5:0);
+		[--SP] = RETS;
+		R7 = 0(Z);
+		R6 = 0(Z);
+
+endian_loop1:	CALL rxchr;			// Receive first byte of word to be tested
+		IF !CC JUMP endian_loop1;
+		R7 = R0;			// Store it in R7
+endian_loop2:	CALL rxchr;			// Receive second byte
+		IF !CC JUMP endian_loop2;	
+		R6 = R0;			// Store it in R6
+
+		R6 <<= 8;			// Shift second byte up 8 bits (implying little endian)
+		R5 = R7 | R6;			// Combine both bytes
+
+
+		R5 += 1;			// Add 1 to ensure bittests fail when wrong endianness
+
+		CC = BITTST(R5, 0);		// If that +1 set the lsb, we have little endian
+		IF CC JUMP little_endian;
+		
+big_endian:	R0 = 'b';			// If not (eg. lowes byte is now 00000010), we have big endian
+		//R0 = R7;
+		CALL txchr;
+
+		R0 = '\n';
+		CALL txchr;
+
+		JUMP endian_exit;
+
+little_endian:	
+		CC = BITTST(R5, 8);		// If something went funky, this ensures, that the 9'th bit of the word is set
+		IF !CC JUMP big_endian;		// so it really is little endian
+
+		R0 = 'l';
+		CALL txchr;
+
+		R0 = '\n';
+		CALL txchr;
+
+endian_exit:
+		RETS = [SP++];
+		(R7:0, P5:0) = [SP++];
+		RTS;
+
