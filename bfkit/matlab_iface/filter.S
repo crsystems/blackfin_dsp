@@ -6,8 +6,8 @@ Use bflod without the terminal (without the -t option).
 (C) 2014, ISI/ETH Zurich, cschuerc@isi.ee.ethz.ch
 **************************************************************************/
 #include    <defBF532.h>
-#define		FIR_ORDER	20
-#define		IIR_ORDER	6	
+#define		FIR_ORDER	21
+#define		IIR_ORDER	2	
 .data
 
 fir_coeff:	.short	0x0000		// space for the FIR coefficients
@@ -29,6 +29,7 @@ fir_coeff:	.short	0x0000		// space for the FIR coefficients
 		.short	0x0000
 		.short	0x0000
 		.short	0x0000
+		.short  0x0000
 		.short	0x0001
 
 iir_coeff:	.short  0x0000		// space for the IIR coefficients
@@ -235,8 +236,11 @@ fir_loop:
 		R1 = 'm';		// measure function desired
 		CC = R0 == R1;
 		IF !CC JUMP fir_fir;
-		CALL measure_function;	// after measure returns, the normal FIR filter operation continues
-		JUMP fir_loop;
+		CALL measure_function;	
+
+		CALL init_buffers;	// after measure returns, the circular buffers are cleared
+
+		JUMP fir_loop;		// and jump to the loop again
 
 fir_fir:	R1 = 'f';		// FIR filter operation desired
 		CC = R0 == R1;
@@ -295,15 +299,16 @@ update_fir_loop:
 		CALL rxchr;
 		IF !CC JUMP update_fir_loop;		
 
-		R0 <<= 8;
-		R5 = R0			//TODO find out endianness of matlab word transfer
+		R5 = R0			//TODO find out endianness reliably of matlab word transfer
 		
 update_fir_wait_second_byte:
 		
 		CALL rxchr;
 		IF !CC JUMP update_fir_wait_second_byte;
 
-		R5 = R5 | R0;			// currently using big endian
+		R0 <<= 8;
+
+		R5 = R5 | R0;			// currently using little endian
 
 		W[P4++] = R5;
 		
@@ -341,7 +346,6 @@ update_iir_loop:
 		CALL rxchr;
 		IF !CC JUMP update_iir_loop;		
 
-		R0 <<= 8;
 		R5 = R0			//TODO find out endianness of matlab word transfer
 		
 update_iir_wait_second_byte:
@@ -349,7 +353,9 @@ update_iir_wait_second_byte:
 		CALL rxchr;
 		IF !CC JUMP update_iir_wait_second_byte;
 
-		R5 = R5 | R0;			// currently using big endian
+		R0 <<= 8;
+
+		R5 = R5 | R0;			// currently using little endian
 
 		W[P4++] = R5;
 		
