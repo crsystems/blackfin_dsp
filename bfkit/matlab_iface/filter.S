@@ -95,33 +95,35 @@ main_loop:
 		CALL rxchr;
 		IF !CC JUMP main_loop;
 
-		R1 = 'm';
-		CC = R0 == R1;
+		R2 = 'm';
+		CC = R0 == R2;
 		IF !CC JUMP fir;
 		CALL measure_function;
 
-fir:		R1 = 'f';
-		CC = R0 == R1;
+fir:		R2 = 'f';
+		CC = R0 == R2;
 		IF !CC JUMP iir;
-		CALL fir_function;
+		R1 = 0 (Z);
+		CALL filter_signal;
 
-iir:		R1 = 'i';
-		CC = R0 == R1;
+iir:		R2 = 'i';
+		CC = R0 == R2;
 		IF !CC JUMP update_fir;
-		CALL iir_function;
+		R1 = 1 (Z);
+		CALL filter_signal;
 
-update_fir:	R1 = 'F';
-		CC = R0 == R1;
+update_fir:	R2 = 'F';
+		CC = R0 == R2;
 		IF !CC JUMP update_iir;
 		CALL update_fir_function;
 
-update_iir:	R1 = 'I';
-		CC = R0 == R1;
+update_iir:	R2 = 'I';
+		CC = R0 == R2;
 		IF !CC JUMP endian;
 		CALL update_iir_function;
 
-endian:		R1 = 'e';
-		CC = R0 == R1;
+endian:		R2 = 'e';
+		CC = R0 == R2;
 		IF !CC JUMP main_loop;
 		CALL endianness_function;
 
@@ -178,28 +180,153 @@ init_buffers:
 
 
 measure_function:
+		[--SP] = (R7:5, P5:4);
+		[--SP] = RETS;
 
-	
+measure_loop:	
+		CALL rxchr;			// wait for data from MATLAB
+		IF !CC JUMP measure_loop;
 
-fir_function:
+		R6 = R0;
+		R7 = 'e';
+		CC = R0 == R2;			// if the data equals 'e' this means the measurement is done
+		IF !CC JUMP measure_filter;
+		JUMP measure_exit;
+
+measure_filter:					// otherwise it is simply the lower byte
+		CALL rxchr;			// therefore we wait for the upper byte
+
+		IF !CC JUMP measure_filter;
+		
+		R0 <<= 8;			// and construct the 16 bit word from that
+		R0 = R0 | R6;
+
+		R5 = R0;			// also, as the filters are awaiting a 32 bit (left and right channel) signal
+		R6 <<= 16;			// we build a mono signal
+
+		R0 = R0 | R5;
+
+		R7 = 0 (Z);			// and decide which filter shall be used
+		CC = R1 == R7;
+		IF CC JUMP measure_fir;
+		JUMP measure_iir;	
+measure_fir:
+		CALL apply_fir;
+		JUMP measure_send_data;	
+
+measure_iir:	
+		CALL apply_iir;
+		
+measure_send_data:
+		R0 >>= 16;			// we randomly choose the upper channel to be evaluated
+
+		R6 = R0;
+		R6 >>= 8;			// this is sent back in two (byte-) pieces
+
+		CALL txchr;
+
+		R0 = R6;
+
+		CALL txchr;
+
+		JUMP measure_loop;		// and the loop begins again
+
+measure_exit:
+		RETS = [SP++];
+		(R7:5, P5:4) = [SP++];
+		RTS;	
+
+
+
+
+filter_signal:
 		[--SP] = (R7:6, P5:4);
 		[--SP] = R0;	
 		[--SP] = RETS;
 
 		CALL init_buffers;	// initialize the circular buffers
 
-		P5.H = last_filter;
-		P5.L = last_filter;
-		R7 = 0;
-		B[P5] = R7;		// writing last_filter variable for measure function
-fir_loop:		
+filter_loop:		
 		CALL rxsport;	// recieve left channel
 		R7 = R0;
 		CALL rxsport;	// recieve right channel
 		R0 <<= 16;
-		R7 = R7 | R0;	// right channel = R7.H, left channel = R7.L
+		R0 = R7 | R0;	// right channel = R7.H, left channel = R7.L
 
-		[I0++] = R7;	// store combined values in circular buffer
+
+		R7 = 0;		
+
+		CC = R1 == R7;	// deciding which filter should be used: == 0 => FIR, != 0 => IIR
+		IF !CC JUMP call_iir; 	
+
+call_fir:	CALL apply_fir; // apply FIR filter to R0
+		JUMP send_filtered;
+
+call_iir:	CALL apply_iir; // apply IIR filter to R0
+
+send_filtered:	R7 = R0;	// get filtered sample from R0
+
+		R7 >>= 16;	// R7.L = right channel, R7.H = 0
+		R0 <<= 16;
+		R0 >>= 16;	// R0.L = left channel, R0.H = 0
+
+				
+		CALL txsport;	// sending filtered sample
+				//|
+		R0 = R7;	//|
+				//|
+		CALL txsport;	//v
+
+		CALL rxchr;		// data received via UART?
+		IF !CC JUMP filter_loop;
+
+		R2 = 'm';		// measure function desired
+		CC = R0 == R2;
+		IF !CC JUMP filter_fir;
+		CALL measure_function;	
+
+		CALL init_buffers;	// after measure returns, the circular buffers are cleared
+
+		JUMP filter_loop;	// and jump to the loop again
+
+filter_fir:	R2 = 'f';		// FIR filter operation desired
+		CC = R0 == R2;
+		IF !CC JUMP filter_iir;
+		JUMP filter_loop;		// just jump to the loop start, as we are supplying the desired function already
+
+filter_iir:	R2 = 'i';		// IIR filter operation desired
+		CC = R0 == R2;
+		IF !CC JUMP filter_update_fir;
+		R1 = 1 (Z);
+		
+		CALL init_buffers;
+		JUMP filter_loop;
+	
+
+filter_update_fir:	
+		R2 = 'F';		// FIR parameter update desired
+		CC = R0 == R2;
+		IF !CC JUMP filter_update_iir;
+		CALL update_fir_function;
+		JUMP filter_loop;
+
+filter_update_iir:	
+		R2 = 'I';		// IIR parameter update desired
+		CC = R0 == R2;
+		IF !CC JUMP filter_loop;
+		CALL update_iir_function;
+
+		JUMP filter_loop;
+
+
+
+apply_iir:	//TODO
+
+
+
+apply_fir:	[--SP] = (R7:6, P5:4);		// awaiting left and right channel sample in R0
+
+		[I0++] = R0;	// store combined values in circular buffer
 
 		P5.H = fir_coeff;
 		P5.L = fir_coeff;
@@ -216,65 +343,11 @@ fir_loop:
 
 		R0.L = A0 (S2RND);
 		R0.H = A1 (S2RND);		// Saving A0 and A1 to R0 and multiplying by 2
+						// Thereby returning the filtered sample in R0
 
-		R7 = R0;
-		R7 >>= 16;	// R7.L = right channel, R7.H = 0
-		R0 <<= 16;
-		R0 >>= 16;	// R0.L = left channel, R0.H = 0
-
-				
-		CALL txsport;	// sending filtered sample
-				//|
-		R0 = R7;	//|
-				//|
-		CALL txsport;	//v
-
-
-		CALL rxchr;		// data received via UART?
-		IF !CC JUMP fir_loop;
-
-		R1 = 'm';		// measure function desired
-		CC = R0 == R1;
-		IF !CC JUMP fir_fir;
-		CALL measure_function;	
-
-		CALL init_buffers;	// after measure returns, the circular buffers are cleared
-
-		JUMP fir_loop;		// and jump to the loop again
-
-fir_fir:	R1 = 'f';		// FIR filter operation desired
-		CC = R0 == R1;
-		IF !CC JUMP fir_iir;
-		JUMP fir_loop;		// just jump to the loop start, as we are supplying the desired function already
-
-fir_iir:	R1 = 'i';		// IIR filter operation desired
-		CC = R0 == R1;
-		IF !CC JUMP fir_update_fir;
-		
-		RETS = [SP++];		// restore return address and registers from stack
-		R0 = [SP++];		
 		(R7:6, P5:4) = [SP++];
-		JUMP iir_function;	// and branch to the fir function
-					// that way it seems to the fir functio, as it were called from the main loop
-					// and we do not waste stack space with nesting unnecessary function calls
+		RTS;
 
-fir_update_fir:	R1 = 'F';		// FIR parameter update desired
-		CC = R0 == R1;
-		IF !CC JUMP fir_update_iir;
-		CALL update_fir_function;
-		JUMP fir_loop;
-
-fir_update_iir:	R1 = 'I';		// IIR parameter update desired
-		CC = R0 == R1;
-		IF !CC JUMP fir_loop;
-		CALL update_iir_function;
-
-		JUMP fir_loop;
-
-
-
-
-iir_function:	//TODO
 
 update_fir_function:
 		[--SP] = RETS;
