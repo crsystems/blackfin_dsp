@@ -6,31 +6,31 @@ Use bflod without the terminal (without the -t option).
 (C) 2014, ISI/ETH Zurich, cschuerc@isi.ee.ethz.ch
 **************************************************************************/
 #include    <defBF532.h>
-#define		FIR_ORDER	21
+#define		FIR_ORDER	21	// = order + 1 because we save the current sample in the circular buffers too
 #define		IIR_ORDER	2	
 .data
 
-fir_coeff:	.short	0x0000		// space for the FIR coefficients
-		.short	0x0000		// initially not filtering at all
-		.short	0x0000		// fortunately, the coefficients are symmetrical
-		.short	0x0000		// which means, that we can use them in reverse without special care
-		.short	0x0000
-		.short	0x0000
-		.short	0x0000
-		.short	0x0000
-		.short	0x0000
-		.short	0x0000
-		.short	0x0000
-		.short	0x0000
-		.short	0x0000
-		.short	0x0000
-		.short	0x0000
-		.short	0x0000
-		.short	0x0000
-		.short	0x0000
-		.short	0x0000
-		.short  0x0000
-		.short	0x0001
+fir_coeff:	.short	0x0265		// space for the FIR coefficients
+		.short	0x0293		// initially not filtering at all
+		.short	0x02bf		// fortunately, the coefficients are symmetrical
+		.short	0x02e7		// which means, that we can use them in reverse without special care
+		.short	0x030a
+		.short	0x032a
+		.short	0x0344
+		.short	0x0358
+		.short	0x0368
+		.short	0x0371
+		.short	0x0374
+		.short	0x0371		// TODO	delete the hardcoded filter after testing
+		.short	0x0368
+		.short	0x0358
+		.short	0x0344
+		.short	0x032a
+		.short	0x030a
+		.short	0x02e7
+		.short	0x02bf
+		.short  0x0293
+		.short	0x0265		// newest input sample (shoud be biased with 0.5 = 0x4000)
 
 iir_coeff:	.short  0x0000		// space for the IIR coefficients
 		.short  0x0000		// initially not filtering at all
@@ -104,13 +104,15 @@ fir:		R2 = 'f';
 		CC = R0 == R2;
 		IF !CC JUMP iir;
 		R1 = 0 (Z);
-		CALL filter_signal;
+		RETS = [SP++];
+		JUMP filter_signal;		// branch to filter_signal, as this function becomes the new "main"
 
 iir:		R2 = 'i';
 		CC = R0 == R2;
 		IF !CC JUMP update_fir;
 		R1 = 1 (Z);
-		CALL filter_signal;
+		RETS = [SP++];
+		JUMP filter_signal;		// similar to execve('filter_signal')
 
 update_fir:	R2 = 'F';
 		CC = R0 == R2;
@@ -173,10 +175,6 @@ init_buffers:
 		RETS = [SP++];
 		(R7:0, P5:0) = [SP++];
 		RTS;
-
-
-
-
 
 
 measure_function:
@@ -320,7 +318,7 @@ filter_update_iir:
 
 
 
-apply_iir:	//TODO
+apply_iir:	RTS;	//TODO
 
 
 
@@ -393,6 +391,7 @@ update_fir_exit:
 		R0 = [SP++];
 		(R7:5, P5:4) = [SP++];
 		RETS = [SP++];	
+		RTS;
 
 
 
@@ -440,7 +439,7 @@ update_iir_exit:
 		R0 = [SP++];
 		(R7:5, P5:4) = [SP++];
 		RETS = [SP++];
-
+		RTS;
 
 
 endianness_function:	
