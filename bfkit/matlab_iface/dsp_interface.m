@@ -38,16 +38,18 @@ function exec_filter(filter)
     global blackfin;
     fopen(blackfin);
     
-    fprintf(blackfin, '%s%s', filter, '\n');
+    fprintf(blackfin, '%s', filter);
+
+    fprintf(blackfin, '%s', '\n');
     
     fclose(blackfin);
 end
 
 
 function measure_filter()
-    freq = 1;                                   % start frequency
-    bound = 20000;                              % end frequency
-    resolution = 120;                           % # of samples per frequency
+    freq = 1000;                                   % start frequency
+    bound = 1001;                              % end frequency
+    resolution = 20;                           % # of samples per frequency
     sample_time = 1/48000;                      % period length of one samle
     input_samples = zeros(1,resolution*bound);  % array of samples of sweep
     output_samples = zeros(1, resolution*bound);
@@ -71,12 +73,17 @@ function measure_filter()
     
     fprintf(blackfin, '%s', 'm\n');
     
+    disp(length(input_samples));
+    
     i = 1;
     while(i <= length(input_samples))
         fwrite(blackfin, hex2dec(hex(fi(input_samples(i), true, 16, 15))));
+        fprintf(blackfin, '%s', '\n');
         
-        output_samples(i) = str2double(fscanf(blackfin, '%s'));
         
+        %output_samples(i) = dec2hex(fread(blackfin, 1));
+        disp(i);
+        disp(fread(blackfin, 1, 'int16'));
         i = i + 1;
     end
     
@@ -151,9 +158,10 @@ end
 function find_endianness()
 
     global blackfin;
-
+    
+    
     fopen(blackfin);
-    fprintf(blackfin, "%s", "m\n");
+    fprintf(blackfin, "%s", "e\n");
     
     fwrite(blackfin, 256);
     
@@ -171,7 +179,8 @@ end
 
 
 function update_fir()
-    file = input("Which file should the coefficients be loaded from: ");
+    prompt = 'Which file should the coefficients be loaded from: ';
+    file = input(prompt);
     load(file, 'Num');
     fir_coeff_dec = 0.5*Num;
     clearvars Num;
@@ -179,15 +188,13 @@ function update_fir()
     global blackfin;
     fopen(blackfin);
     
-    fprintf(blackfin, "%s", "F");
+    fprintf(blackfin, "%s", "F\n");
+    
     
     i = 1;
     while(i <= length(fir_coeff_dec))
         fwrite(blackfin, hex2dec(hex(fi(fir_coeff_dec(i),1,16,15))));
         fprintf(blackfin, "%s", "\n");
-    
-        %disp(hex2dec(hex(fi(fir_coeff_dec(i),1,16,15))));
-        
         i = i + 1;
     end
     

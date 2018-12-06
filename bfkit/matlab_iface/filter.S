@@ -10,27 +10,27 @@ Use bflod without the terminal (without the -t option).
 #define		IIR_ORDER	2	
 .data
 
-fir_coeff:	.short	0x0265		// space for the FIR coefficients
-		.short	0x0293		// initially not filtering at all
-		.short	0x02bf		// fortunately, the coefficients are symmetrical
-		.short	0x02e7		// which means, that we can use them in reverse without special care
-		.short	0x030a
-		.short	0x032a
-		.short	0x0344
-		.short	0x0358
-		.short	0x0368
-		.short	0x0371
-		.short	0x0374
-		.short	0x0371		// TODO	delete the hardcoded filter after testing
-		.short	0x0368
-		.short	0x0358
-		.short	0x0344
-		.short	0x032a
-		.short	0x030a
-		.short	0x02e7
-		.short	0x02bf
-		.short  0x0293
-		.short	0x0265		// newest input sample (shoud be biased with 0.5 = 0x4000)
+fir_coeff:	.short	0xfe19		// space for the FIR coefficients
+		.short	0xfdf4
+		.short  0xfdd2		// initially not filtering at all
+		.short	0xfdb2		// fortunately, the coefficients are symmetrical
+		.short	0xfd96		// which means, that we can use them in reverse without special care
+		.short	0xfd7d
+		.short	0xfd68
+		.short  0xfd57
+		.short	0xfd4b
+		.short	0xfd44
+		.short	0x3f16
+		.short	0xfd44
+		.short	0xfd4b
+		.short	0xfd57		// TODO	delete the hardcoded filter after testing
+		.short	0xfd68
+		.short	0xfd7d
+		.short	0xfd96
+		.short	0xfdb2
+		.short	0xfdd2
+		.short	0xfdf4
+		.short	0xfe19          // newest input sample (shoud be biased with 0.5 = 0x4000)
 
 iir_coeff:	.short  0x0000		// space for the IIR coefficients
 		.short  0x0000		// initially not filtering at all
@@ -147,7 +147,7 @@ init_buffers:
 		I0.L = fir_buffer;
 		B0 = I0;
 		L0.H = HI(4*FIR_ORDER);
-		L0.L = LO(4*IIR_ORDER);
+		L0.L = LO(4*FIR_ORDER);
 		
 		P5 = FIR_ORDER;
 		R7 = 0;
@@ -187,7 +187,7 @@ measure_loop:
 
 		R6 = R0;
 		R7 = 'e';
-		CC = R0 == R2;			// if the data equals 'e' this means the measurement is done
+		CC = R0 == R7;			// if the data equals 'e' this means the measurement is done
 		IF !CC JUMP measure_filter;
 		JUMP measure_exit;
 
@@ -200,7 +200,7 @@ measure_filter:					// otherwise it is simply the lower byte
 		R0 = R0 | R6;
 
 		R5 = R0;			// also, as the filters are awaiting a 32 bit (left and right channel) signal
-		R6 <<= 16;			// we build a mono signal
+		R5 <<= 16;			// we build a mono signal
 
 		R0 = R0 | R5;
 
@@ -224,6 +224,10 @@ measure_send_data:
 		CALL txchr;
 
 		R0 = R6;
+
+		CALL txchr;
+
+		R0 = '\n';
 
 		CALL txchr;
 
@@ -329,7 +333,8 @@ apply_fir:	[--SP] = (R7:6, P5:4);		// awaiting left and right channel sample in 
 		P5.H = fir_coeff;
 		P5.L = fir_coeff;
 
-		P4 = FIR_ORDER;
+		P4.H = HI(FIR_ORDER);
+		P4.L = LO(FIR_ORDER);
 
 		A0 = A1 = 0;	// clearing accumulator registers
 	
@@ -342,6 +347,7 @@ apply_fir:	[--SP] = (R7:6, P5:4);		// awaiting left and right channel sample in 
 		R0.L = A0 (S2RND);
 		R0.H = A1 (S2RND);		// Saving A0 and A1 to R0 and multiplying by 2
 						// Thereby returning the filtered sample in R0
+		
 
 		(R7:6, P5:4) = [SP++];
 		RTS;
@@ -355,9 +361,11 @@ update_fir_function:
 		R7 = 0;
 
 		P5.H = HI(FIR_ORDER);
-		P5.L = LO(FIR_ORDER);
+		P5.L = LO(FIR_ORDER);		
 
-		R6.L = W[P5];
+		R6 = P5;
+
+		//R6 = 21(Z);
 
 		P4.H = fir_coeff;
 		P4.L = fir_coeff;
