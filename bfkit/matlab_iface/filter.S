@@ -32,21 +32,17 @@ fir_coeff:	.short	0xfe19		// space for the FIR coefficients
 		.short	0xfdf4
 		.short	0xfe19          // newest input sample (shoud be biased with 0.5 = 0x4000)
 
-iir_coeff:	.short  0x0000		// space for the IIR coefficients
-		.short  0x0000		// initially not filtering at all
-		.short  0x0000		//TODO	document in which order the coefficients have to be supplied
-		.short  0x0000
-		.short  0x0000
-		.short	0x0000
-
-last_filter:	.byte	0x00		// to remember which filter was previously selected before a measurement or a coefficient
-					// update
-					// 0 => FIR, 1 => IIR
+iir_coeff:	.short  0x0000		// b0
+		.short  0x0000		// b1
+		.short  0x0000		// b2 
+		.short  0x0000		// a1
+		.short  0x0000		// a2 
+		.short	0x0000		// a0
 
 .align 4
 fir_buffer:	.space 4*FIR_ORDER;	// input buffer for the FIR filter (4 bytes a sample times 20 samples = 80 bytes)
 
-iir_buffer:	.space 4*IIR_ORDER;	// input buffer for the IIR filter (4 bytes a sample times 6 samples = 24 bytes)
+iir_buffer:	.space 2*4*IIR_ORDER+1;	// input buffer for the IIR filter (4 bytes a sample times 6 samples = 24 bytes)
 
 
 
@@ -322,8 +318,67 @@ filter_update_iir:
 
 
 
-apply_iir:	RTS;	//TODO
+apply_iir:	[--SP] = (R7:5, P5:4);
+		
+		[I1] = R0;					// current input sample in first position of circular buffer
 
+		P5.H = iir_coeff;				// P5 holds the address of the coefficients
+		P5.L = iir_coeff;
+
+		P4.H = HI(IIR_ORDER+1);				// first loop multiplies order + 1 input samples
+		P4.L = LO(IIR_ORDER+1);
+
+		A0 = A1 = 0;					// clearing the accumulator registers
+
+		R5 = 0 (Z);					// initializing the down shift value
+		
+		LOOP iir_calc_loop1 LC0 = P4;
+		LOOP_BEGIN iir_calc_loop1;
+			R7 = W[P5++] (X) || R6 = [I1];		// R7.L holds the current coefficient, R6 the appropriate sample
+			A0 += R7.L * R6.L, A1 = R7.L * R6.H;	// A0 is responsible for the left channel, A1 for the right
+			[I1++] = R5;				// the current value in the chain is replaced by the preceeding one
+			R5 = R6;				// and the replacement for the next value is set to the current val.
+		LOOP_END iir_calc_loop1;
+
+
+		P4.H = HI(IIR_ORDER);				// second loop multiplies order times output samples
+		P4.L = LO(IIR_ORDER);
+
+		R5 = 0 (Z);
+
+		LOOP iir_calc_loop2 LC0 = P4;
+		LOOP_BEGIN iir_calc_loop2;
+			R7 = W[P5++] (X) || R6 = [I1];
+			A0 += R7.L * R6.L, A1 = R7.L * R6.H;
+			[I1++] = R5;
+			R5 = R6;
+		LOOP_END iir_calc_loop2;
+
+		R0.L = A0 (S2RND);
+		R0.H = A1 (S2RND);
+
+		R7 = W[P5] (X);					// the last coefficient has to be a0 (scaling value for the output)
+
+		R7 <<= 1;					// WARNING: may be bullshit, but multiplying by to, to compensate
+								// that the coefficients are saved as half their value
+
+		R0.L = R0.L * R7.L, R0.H = R0.H * R7.L;		// multiplying the final output by the scaling value
+
+
+		P4 = I1;					// the circular buffer should now be in its initial position again
+			
+		R5 = I1;
+	
+		R5 += 12;
+
+		I1 = R5;					// 3 values times 4 bytes makes 12 byte offset for y[k]
+
+		[I1] = R0;					// saving the just calculated y[k] in the circular buffer
+
+		I1 = P4;					// and restoring the circular buffer
+
+		(R7:5, P5:4) = [SP++];
+		RTS;
 
 
 apply_fir:	[--SP] = (R7:6, P5:4);		// awaiting left and right channel sample in R0
@@ -340,8 +395,8 @@ apply_fir:	[--SP] = (R7:6, P5:4);		// awaiting left and right channel sample in 
 	
 		LOOP fir_calc_loop LC0 = P4;
 		LOOP_BEGIN fir_calc_loop;
-			R6 = W[P5++] (X) || R7 = [I0++];	// R6 = (order-i)'th filter parameter, R7 = (order-i)'th sample
-			A0 += R7.L * R6.L, A1 += R7.H * R6.L;	// A0 is responsible for the left channel, A1 for the right
+			R7 = W[P5++] (X) || R6 = [I0++];	// R6 = (order-i)'th filter parameter, R7 = (order-i)'th sample
+			A0 += R6.L * R7.L, A1 += R6.H * R7.L;	// A0 is responsible for the left channel, A1 for the right
 		LOOP_END fir_calc_loop;
 
 		R0.L = A0 (S2RND);
@@ -378,7 +433,7 @@ update_fir_loop:
 		CALL rxchr;
 		IF !CC JUMP update_fir_loop;		
 
-		R5 = R0			//TODO find out endianness reliably of matlab word transfer
+		R5 = R0
 		
 update_fir_wait_second_byte:
 		
@@ -387,7 +442,7 @@ update_fir_wait_second_byte:
 
 		R0 <<= 8;
 
-		R5 = R5 | R0;			// currently using little endian
+		R5 = R5 | R0;
 
 		W[P4++] = R5;
 		
@@ -410,14 +465,11 @@ update_iir_function:
 
 		R7 = 0;
 
-		P5.H = HI(IIR_ORDER);
-		P5.L = LO(IIR_ORDER);
-
-		R6.L = W[P5];
+		R6.H = HI(IIR_ORDER*2+1);
+		R6.L = LO(IIR_ORDER*2+1);
 
 		P4.H = iir_coeff;
 		P4.L = iir_coeff;
-
 		
 update_iir_loop:
 		CC = R7 < R6;
@@ -426,7 +478,7 @@ update_iir_loop:
 		CALL rxchr;
 		IF !CC JUMP update_iir_loop;		
 
-		R5 = R0			//TODO find out endianness of matlab word transfer
+		R5 = R0;
 		
 update_iir_wait_second_byte:
 		
@@ -435,7 +487,7 @@ update_iir_wait_second_byte:
 
 		R0 <<= 8;
 
-		R5 = R5 | R0;			// currently using little endian
+		R5 = R5 | R0;
 
 		W[P4++] = R5;
 		
