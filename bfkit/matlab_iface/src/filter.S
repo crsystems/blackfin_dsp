@@ -82,11 +82,9 @@ init:       [--SP] = RETS;           // push RETS to allow nested calls
             CALL initx;             // initialize uart
 
 
-/**************************************************************************
-Exchange the code below by your own code. Note that you can not send data
-to matlab at a too high speed.
-**************************************************************************/
-
+// function, that loops and waits for user input, before any filtering was selected
+//
+//
 main_loop:
 		CALL rxchr;
 		IF !CC JUMP main_loop;
@@ -128,13 +126,10 @@ endian:		R2 = 'e';
 		JUMP main_loop;
 
 
-/*
 
-Clearing the memory for the circular buffers of the FIR and IIR filters
-
-*/
-
-
+// function to initialize the circular buffers with zero
+//
+//
 init_buffers:
 		[--SP] = (R7:0, P5:0);
 		[--SP] = RETS;
@@ -150,22 +145,22 @@ init_buffers:
 
 		LOOP clearfirbuf LC0 = P5;	// Clearing circular buffer for FIR
 		LOOP_BEGIN clearfirbuf;
-		[I0++] = R7;
-		nop;
+			[I0++] = R7;
+			nop;
 		LOOP_END clearfirbuf;
 
 
 		I1.H = iir_buffer;		// Circular buffer 1 => IIR buffer
 		I1.L = iir_buffer;
 		B1 = I1;
-		L1.H = HI(4*IIR_ORDER);
-		L1.L = LO(4*IIR_ORDER);
+		L1.H = HI(4*2*IIR_ORDER+1);
+		L1.L = LO(4*2*IIR_ORDER+1);
 
-		P5 = IIR_ORDER;		
+		P5 = 2*IIR_ORDER+1;		
 		LOOP cleariirbuf LC0 = P5;	// Clearing circular buffer for IIR
 		LOOP_BEGIN cleariirbuf;
-		[I1++] = R7;
-		nop;
+			[I1++] = R7;
+			nop;
 		LOOP_END cleariirbuf;
 
 		RETS = [SP++];
@@ -173,6 +168,10 @@ init_buffers:
 		RTS;
 
 
+
+// function for measuring the filter response to samples sent via UART
+//
+//
 measure_function:
 		[--SP] = (R7:5, P5:4);
 		[--SP] = RETS;
@@ -217,15 +216,13 @@ measure_send_data:
 		R6 = R0;
 		R6 >>= 8;			// this is sent back in two (byte-) pieces
 
-		CALL txchr;
+		CALL txdec;
 
 		R0 = R6;
 
-		CALL txchr;
+		CALL txdec;
 
-		R0 = '\n';
-
-		CALL txchr;
+		CALL txbr;
 
 		JUMP measure_loop;		// and the loop begins again
 
@@ -236,7 +233,9 @@ measure_exit:
 
 
 
-
+// function, that acts as micro OS and filters the incoming signal with the specified filter
+//
+//
 filter_signal:
 		[--SP] = (R7:6, P5:4);
 		[--SP] = R0;	
@@ -311,13 +310,23 @@ filter_update_fir:
 filter_update_iir:	
 		R2 = 'I';		// IIR parameter update desired
 		CC = R0 == R2;
-		IF !CC JUMP filter_loop;
+		IF !CC JUMP filter_endian;
 		CALL update_iir_function;
+
+filter_endian:	R2 = 'e';		// endianness test desired
+		CC = R0 == R2;
+		IF !CC JUMP filter_loop;
+		CALL endianness_function;
+
 
 		JUMP filter_loop;
 
 
 
+
+// function for applying an IIR filter to a signal sample in R0
+//
+//
 apply_iir:	[--SP] = (R7:5, P5:4);
 		
 		[I1] = R0;					// current input sample in first position of circular buffer
@@ -381,6 +390,10 @@ apply_iir:	[--SP] = (R7:5, P5:4);
 		RTS;
 
 
+
+// function for applying an FIR filter to a signal sample in R0
+//
+//
 apply_fir:	[--SP] = (R7:6, P5:4);		// awaiting left and right channel sample in R0
 
 		[I0++] = R0;	// store combined values in circular buffer
@@ -408,6 +421,10 @@ apply_fir:	[--SP] = (R7:6, P5:4);		// awaiting left and right channel sample in 
 		RTS;
 
 
+
+//function, that updates the fir coefficients with newer values
+//
+//
 update_fir_function:
 		[--SP] = RETS;
 		[--SP] = (R7:5, P5:4);
@@ -419,8 +436,6 @@ update_fir_function:
 		P5.L = LO(FIR_ORDER);		
 
 		R6 = P5;
-
-		//R6 = 21(Z);
 
 		P4.H = fir_coeff;
 		P4.L = fir_coeff;
@@ -458,6 +473,10 @@ update_fir_exit:
 
 
 
+
+// function, that updates the iir coefficients with newer values
+//
+//
 update_iir_function:	
 		[--SP] = RETS;
 		[--SP] = (R7:5, P5:4);
@@ -465,8 +484,8 @@ update_iir_function:
 
 		R7 = 0;
 
-		R6.H = HI(IIR_ORDER*2+1);
-		R6.L = LO(IIR_ORDER*2+1);
+		R6.H = HI(IIR_ORDER*3);
+		R6.L = LO(IIR_ORDER*3);
 
 		P4.H = iir_coeff;
 		P4.L = iir_coeff;
@@ -502,6 +521,10 @@ update_iir_exit:
 		RTS;
 
 
+
+// function for testing the endianness of the UART data transmission
+//
+//
 endianness_function:	
 		[--SP] = (R7:0, P5:0);
 		[--SP] = RETS;
@@ -525,11 +548,9 @@ endian_loop2:	CALL rxchr;			// Receive second byte
 		IF CC JUMP little_endian;
 		
 big_endian:	R0 = 'b';			// If not (eg. lowes byte is now 00000010), we have big endian
-		//R0 = R7;
 		CALL txchr;
 
-		R0 = '\n';
-		CALL txchr;
+		CALL txbr;
 
 		JUMP endian_exit;
 
@@ -540,8 +561,7 @@ little_endian:
 		R0 = 'l';
 		CALL txchr;
 
-		R0 = '\n';
-		CALL txchr;
+		CALL txbr;
 
 endian_exit:
 		RETS = [SP++];

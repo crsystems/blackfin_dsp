@@ -1,4 +1,3 @@
-
 format long;
 
 global blackfin;
@@ -68,39 +67,36 @@ function measure_filter()
     
     %communicate with dsp...
     
-    %global blackfin;
-    %fopen(blackfin);
+    global blackfin;
+    fopen(blackfin);
     
-    %fprintf(blackfin, '%s', 'm\n');
+    fprintf(blackfin, '%s', 'm\n');
     
-    %disp(length(input_samples));
+    i = 1;
+       
+    fixed_point_convert = fi([], true, 16, 15);
     
-    %i = 1;
-    %while(i <= length(input_samples))
-    %    fwrite(blackfin, hex2dec(hex(fi(input_samples(i), true, 16, 15))));
-    %    fprintf(blackfin, '%s', '\n');
+    while(i <= length(input_samples))
+        current = input_samples_fixed(i);
+        fwrite(blackfin, current.dec);
+        fprintf(blackfin, '%s', '\n');
         
-        
-        %output_samples(i) = dec2hex(fread(blackfin, 1));
-    %    disp(i);
-    %    disp(fread(blackfin, 1, 'int16'));
-    %    i = i + 1;
-    %end
+        fixed_point_convert.dec = fscanf(blackfin, '%s');
+        output_samples(i) = fixed_point_convert.double;
+        i = i + 1;
+    end
     
-    %fprintf(blackfin, '%s', 'e\n');
+    fprintf(blackfin, '%s', 'e\n');
     
-    %fclose(blackfin);
+    fclose(blackfin);
     
-    load('iir.mat');
+    %load('iir.mat');
     %load('fir.mat');
-    coeffs_iir = G(1)*SOS;
+    %coeffs_iir = G(1)*SOS;
     %coeffs_fir = Num;
     
     %output_samples = apply_fir(input_samples, coeffs_fir);
-    output_samples = apply_iir(input_samples, coeffs_iir);
-    
-    %plot(output_samples);
-    
+    %output_samples = apply_iir(input_samples, coeffs_iir);    
     
     gain = zeros(1, bound*resolution);
     g = 1;
@@ -142,6 +138,7 @@ end
 
 function out = apply_fir(input, coeffs)
     offset = zeros(1,20);
+    out = zeros(1, length(input));
     final_input_signal = cat(2, offset, input);
     
     i = 21;
@@ -159,12 +156,9 @@ end
 
 
 function out = apply_iir(input, coeffs)
+    out = zeros(1, length(input));
     offset = zeros(1, 2);
     final_input_signal = cat(2, offset, input);
-    
-    %load('iir_order4.mat');
-    
-    %coeffs_2 = G(2)*SOS(2,:);
     
     tmp(1) = 0;
     tmp(2) = 0;
@@ -172,7 +166,6 @@ function out = apply_iir(input, coeffs)
     k = 3;
     while(k < length(final_input_signal))
         tmp(k) = (final_input_signal(k)*coeffs(1)+final_input_signal(k-1)*coeffs(2)+final_input_signal(k-2)*coeffs(3)+tmp(k-1)*coeffs(5)+tmp(k-2)*coeffs(6))*coeffs(4);
-        %tmp(k) = tmp(k) + (final_input_signal(k)*coeffs_2(1)+final_input_signal(k-1)*coeffs_2(2)+final_input_signal(k-2)*coeffs_2(3)+tmp(k-1)*coeffs_2(5)+tmp(k-2)*coeffs_2(6))*coeffs_2(4);
         out(k-2) = tmp(k);
         k = k + 1;
     end
@@ -209,7 +202,6 @@ function update_fir()
     file = input(prompt);
     load(file, 'Num');
     fir_coeff_dec = 0.5*Num;
-    clearvars Num;
     
     global blackfin;
     fopen(blackfin);
@@ -232,6 +224,25 @@ function update_iir()
     file = input("Which file should the coefficients be loaded from: ");
     load(file, 'G', 'SOS');
     
-    %iir_coeff_dec = 0.5
-    clearvars();
+    iir_coeff_dec = 0.5*G(1)*SOS;
+    
+    global blackfin;
+    fopen(blackfin);
+    
+    fprintf(blackfin, "%s", "I\n");
+    
+    fwrite(blackfin, hex2dec(hex(fi(iir_coeff_dec(1),1,16,15))));
+    fprintf(blackfin, "%s", "\n");
+    fwrite(blackfin, hex2dec(hex(fi(iir_coeff_dec(2),1,16,15))));
+    fprintf(blackfin, "%s", "\n");
+    fwrite(blackfin, hex2dec(hex(fi(iir_coeff_dec(3),1,16,15))));
+    fprintf(blackfin, "%s", "\n");
+    fwrite(blackfin, hex2dec(hex(fi(iir_coeff_dec(5),1,16,15))));
+    fprintf(blackfin, "%s", "\n");
+    fwrite(blackfin, hex2dec(hex(fi(iir_coeff_dec(6),1,16,15))));
+    fprintf(blackfin, "%s", "\n");
+    fwrite(blackfin, hex2dec(hex(fi(iir_coeff_dec(4),1,16,15))));
+    fprintf(blackfin, "%s", "\n");
+    
+    fclose(blackfin);
 end
