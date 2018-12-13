@@ -47,7 +47,7 @@ end
 
 function measure_filter()
     freq = 1;                                   % start frequency
-    bound = 2000;                              % end frequency
+    bound = 200;                              % end frequency
     resolution = 20;                           % # of samples per frequency
     sample_time = 1/48000;                      % period length of one samle
     input_samples = zeros(1,resolution*bound);  % array of samples of sweep
@@ -99,33 +99,50 @@ function measure_filter()
     
     fclose(blackfin);
     
-    %load('iir.mat');
-    %load('fir.mat');
-    %coeffs_iir = G(1)*SOS;
-    %coeffs_fir = Num;
+    load('iir.mat');
+    load('fir.mat');
+    coeffs_iir = G(1)*SOS;
+    coeffs_fir = Num;
     
-    %output_samples = apply_fir(input_samples, coeffs_fir);
-    %output_samples = apply_iir(input_samples, coeffs_iir);    
+    output_samples_sim_fir = apply_fir(input_samples, coeffs_fir);
+    output_samples_sim_iir = apply_iir(input_samples, coeffs_iir);    
     
     gain = zeros(1, bound*resolution);
+    gain_sim_fir = zeros(1, bound*resolution);
+    gain_sim_iir = zeros(1, bound*resolution);
     g = 1;
     while(g <= length(output_samples))
         if(output_samples(g)/input_samples(g) >= 2)
             gain(g) = 2;
+            
         elseif(output_samples(g)/input_samples(g) <= 0.01)
             gain(g) = 0.01;
         else
             gain(g) = output_samples(g)/input_samples(g);
         end
-        
-        if(g == 0.25*(bound*resolution))
-            disp("25% finished");
-        elseif(g == 0.5*(bound*resolution))
-            disp("50% finished");
-        elseif(g == 0.75*(bound*resolution))
-            disp("75% finished");
-        elseif(g == bound*resolution)
-            disp("Done.");
+        g = g + 1;
+    end
+    g = 1;
+    while(g <= length(output_samples))
+        if(output_samples_sim_fir(g)/input_samples(g) >= 2)
+            gain_sim_fir(g) = 2;
+            
+        elseif(output_samples_sim_fir(g)/input_samples(g) <= 0.01)
+            gain_sim_fir(g) = 0.01;
+        else
+            gain_sim_fir(g) = output_samples_sim_fir(g)/input_samples(g);
+        end
+        g = g + 1;
+    end
+    g = 1;
+    while(g <= length(output_samples))
+        if(output_samples_sim_iir(g)/input_samples(g) >= 2)
+            gain_sim_iir(g) = 2;
+            
+        elseif(output_samples_sim_iir(g)/input_samples(g) <= 0.01)
+            gain_sim_iir(g) = 0.01;
+        else
+            gain_sim_iir(g) = output_samples_sim_iir(g)/input_samples(g);
         end
         g = g + 1;
     end
@@ -141,8 +158,43 @@ function measure_filter()
         bode_plot(j) = 20*log10(abs(tmp/resolution));             % divide by the number of samples and convert it to the dB scale
         j = j + 1;
     end
-    plot(bode_plot);
     
+    j = 1;
+    while(j <= length(input_samples)/resolution)                                           % for every frequency
+        l=1;
+        tmp = 0;
+        while(l <= resolution)                                  % for every sample in that frequency
+            tmp = tmp + gain_sim_fir((j-1)*resolution + l);             % add all the obtained gains
+            l = l + 1;
+        end
+        bode_plot_sim_fir(j) = 20*log10(abs(tmp/resolution));             % divide by the number of samples and convert it to the dB scale
+        j = j + 1;
+    end
+    
+    j = 1;
+    while(j <= length(input_samples)/resolution)                                           % for every frequency
+        l=1;
+        tmp = 0;
+        while(l <= resolution)                                  % for every sample in that frequency
+            tmp = tmp + gain_sim_iir((j-1)*resolution + l);             % add all the obtained gains
+            l = l + 1;
+        end
+        bode_plot_sim_iir(j) = 20*log10(abs(tmp/resolution));             % divide by the number of samples and convert it to the dB scale
+        j = j + 1;
+    end
+    
+    hold on;
+    meas = plot(bode_plot); M1 = "Measured response";
+    
+    sim_fir = plot(bode_plot_sim_fir); M2 = "Simulated FIR filter";
+    
+    sim_iir = plot(bode_plot_sim_iir); M3 = "Simulated IIR filter";
+    
+    legend([meas; sim_fir; sim_iir], [M1; M2; M3]);
+
+    xlabel('Frequency');
+    ylabel('Damping in dezibels');
+
 end
 
 function out = apply_fir(input, coeffs)
