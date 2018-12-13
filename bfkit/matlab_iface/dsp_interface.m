@@ -47,8 +47,8 @@ end
 
 function measure_filter()
     freq = 1;                                   % start frequency
-    bound = 20000;                              % end frequency
-    resolution = 120;                           % # of samples per frequency
+    bound = 2000;                              % end frequency
+    resolution = 20;                           % # of samples per frequency
     sample_time = 1/48000;                      % period length of one samle
     input_samples = zeros(1,resolution*bound);  % array of samples of sweep
     output_samples = zeros(1, resolution*bound);
@@ -65,6 +65,7 @@ function measure_filter()
     
     input_samples_fixed = fi(input_samples, true, 16, 15);  % converting long double to fixed length fix point fraction
     
+    %disp(length(input_samples));
     %communicate with dsp...
     
     global blackfin;
@@ -81,8 +82,16 @@ function measure_filter()
         fwrite(blackfin, current.dec);
         fprintf(blackfin, '%s', '\n');
         
-        fixed_point_convert.dec = fscanf(blackfin, '%s');
+        derp = fscanf(blackfin, '%s');
+        if(isnan(str2double(derp)))
+            output_samples(i) = 0;
+            i = i + 1;
+            continue;
+        end
+        fixed_point_convert.dec = derp;
         output_samples(i) = fixed_point_convert.double;
+        %disp(derp);
+        %disp(output_samples(i));
         i = i + 1;
     end
     
@@ -122,7 +131,7 @@ function measure_filter()
     end
     
     j = 1;
-    while(j <= bound)                                           % for every frequency
+    while(j <= length(input_samples)/resolution)                                           % for every frequency
         l=1;
         tmp = 0;
         while(l <= resolution)                                  % for every sample in that frequency
@@ -221,7 +230,8 @@ end
 
 
 function update_iir()
-    file = input("Which file should the coefficients be loaded from: ");
+    prompt = 'Which file should the coefficients be loaded from: ';
+    file = input(prompt);
     load(file, 'G', 'SOS');
     
     iir_coeff_dec = 0.5*G(1)*SOS;

@@ -42,7 +42,7 @@ iir_coeff:	.short  0x0000		// b0
 .align 4
 fir_buffer:	.space 4*FIR_ORDER;	// input buffer for the FIR filter (4 bytes a sample times 20 samples = 80 bytes)
 
-iir_buffer:	.space 2*4*IIR_ORDER+1;	// input buffer for the IIR filter (4 bytes a sample times 6 samples = 24 bytes)
+iir_buffer:	.space 20;	// input buffer for the IIR filter (4 bytes a sample times 6 samples = 24 bytes)
 
 
 
@@ -153,10 +153,10 @@ init_buffers:
 		I1.H = iir_buffer;		// Circular buffer 1 => IIR buffer
 		I1.L = iir_buffer;
 		B1 = I1;
-		L1.H = HI(4*2*IIR_ORDER+1);
-		L1.L = LO(4*2*IIR_ORDER+1);
+		L1.H = HI(20);
+		L1.L = LO(20);
 
-		P5 = 2*IIR_ORDER+1;		
+		P5 = 5;		
 		LOOP cleariirbuf LC0 = P5;	// Clearing circular buffer for IIR
 		LOOP_BEGIN cleariirbuf;
 			[I1++] = R7;
@@ -175,6 +175,7 @@ init_buffers:
 measure_function:
 		[--SP] = (R7:5, P5:4);
 		[--SP] = RETS;
+		CALL init_buffers;
 
 measure_loop:	
 		CALL rxchr;			// wait for data from MATLAB
@@ -190,6 +191,9 @@ measure_filter:					// otherwise it is simply the lower byte
 		CALL rxchr;			// therefore we wait for the upper byte
 
 		IF !CC JUMP measure_filter;
+
+		CC = R0 == R7;
+		IF CC JUMP measure_exit;
 		
 		R0 <<= 8;			// and construct the 16 bit word from that
 		R0 = R0 | R6;
@@ -289,13 +293,14 @@ send_filtered:	R7 = R0;	// get filtered sample from R0
 filter_fir:	R2 = 'f';		// FIR filter operation desired
 		CC = R0 == R2;
 		IF !CC JUMP filter_iir;
+		R1 = 0 (Z);
 		JUMP filter_loop;		// just jump to the loop start, as we are supplying the desired function already
+		CALL init_buffers;
 
 filter_iir:	R2 = 'i';		// IIR filter operation desired
 		CC = R0 == R2;
 		IF !CC JUMP filter_update_fir;
 		R1 = 1 (Z);
-		
 		CALL init_buffers;
 		JUMP filter_loop;
 	
@@ -328,14 +333,14 @@ filter_endian:	R2 = 'e';		// endianness test desired
 //
 //
 apply_iir:	[--SP] = (R7:5, P5:4);
-		
+		[--SP] = RETS;
+	
 		[I1] = R0;					// current input sample in first position of circular buffer
 
 		P5.H = iir_coeff;				// P5 holds the address of the coefficients
 		P5.L = iir_coeff;
 
-		P4.H = HI(IIR_ORDER+1);				// first loop multiplies order + 1 input samples
-		P4.L = LO(IIR_ORDER+1);
+		P4 = 3 (Z);				// first loop multiplies order + 1 input samples
 
 		A0 = A1 = 0;					// clearing the accumulator registers
 
@@ -344,34 +349,41 @@ apply_iir:	[--SP] = (R7:5, P5:4);
 		LOOP iir_calc_loop1 LC0 = P4;
 		LOOP_BEGIN iir_calc_loop1;
 			R7 = W[P5++] (X) || R6 = [I1];		// R7.L holds the current coefficient, R6 the appropriate sample
-			A0 += R7.L * R6.L, A1 = R7.L * R6.H;	// A0 is responsible for the left channel, A1 for the right
+			A0 += R7.L * R6.L, A1 += R7.L * R6.H;	// A0 is responsible for the left channel, A1 for the right
 			[I1++] = R5;				// the current value in the chain is replaced by the preceeding one
 			R5 = R6;				// and the replacement for the next value is set to the current val.
 		LOOP_END iir_calc_loop1;
 
 
-		P4.H = HI(IIR_ORDER);				// second loop multiplies order times output samples
-		P4.L = LO(IIR_ORDER);
+		P4 = 2 (Z);				// second loop multiplies order times output samples
 
 		R5 = 0 (Z);
 
 		LOOP iir_calc_loop2 LC0 = P4;
 		LOOP_BEGIN iir_calc_loop2;
 			R7 = W[P5++] (X) || R6 = [I1];
-			A0 += R7.L * R6.L, A1 = R7.L * R6.H;
+			A0 += R7.L * R6.L, A1 += R7.L * R6.H;
 			[I1++] = R5;
 			R5 = R6;
 		LOOP_END iir_calc_loop2;
 
+		R7 = W[P5];
+
+		R0.L = A0, R0.H = A1;
+		
+		A0 = R0.L * R7.L;
+
+		A1 = R0.H * R7.L;
+
 		R0.L = A0 (S2RND);
 		R0.H = A1 (S2RND);
 
-		R7 = W[P5] (X);					// the last coefficient has to be a0 (scaling value for the output)
+		//R7 = W[P5] (X);					// the last coefficient has to be a0 (scaling value for the output)
 
-		R7 <<= 1;					// WARNING: may be bullshit, but multiplying by to, to compensate
+		//R7 <<= 1;					// WARNING: may be bullshit, but multiplying by to, to compensate
 								// that the coefficients are saved as half their value
 
-		R0.L = R0.L * R7.L, R0.H = R0.H * R7.L;		// multiplying the final output by the scaling value
+		//R0.L = R0.L * R7.L, R0.H = R0.H * R7.L;		// multiplying the final output by the scaling value
 
 
 		P4 = I1;					// the circular buffer should now be in its initial position again
@@ -386,6 +398,7 @@ apply_iir:	[--SP] = (R7:5, P5:4);
 
 		I1 = P4;					// and restoring the circular buffer
 
+		RETS = [SP++];
 		(R7:5, P5:4) = [SP++];
 		RTS;
 
@@ -484,8 +497,7 @@ update_iir_function:
 
 		R7 = 0;
 
-		R6.H = HI(IIR_ORDER*3);
-		R6.L = LO(IIR_ORDER*3);
+		R6 = 6 (Z);
 
 		P4.H = iir_coeff;
 		P4.L = iir_coeff;
